@@ -1,0 +1,38 @@
+# YTB downloader v0.1.0 設定ファイル
+
+# ダウンロード先
+# 相対パスは設定ファイルの配置場所を基準にする
+download_dir = "downloads"
+
+# 重複防止用のyt-dlp download archive
+archive_file = "archive.txt"
+
+# ログ保存先
+log_dir = "logs"
+
+# 既定のダウンロードモード
+# "video" または "audio"
+default_mode = "video"
+
+# 音声保存形式
+# "mp3"    : MP3に変換
+# "original" : 元の音声形式のまま保存
+audio_format = "mp3"
+
+# ffmpegの配置先
+# フォルダまたは実行ファイルを指定できる
+# 既定ではツール配下のffmpegフォルダ
+ffmpeg_location = "ffmpeg"
+
+# 字幕を保存する
+subtitles = false
+
+# サムネイルを保存する
+thumbnails = false
+
+# メタデータを埋め込む
+embed_metadata = false
+
+# Cookieファイルのパス
+# v0.1.0では未使用
+cookies = ""
