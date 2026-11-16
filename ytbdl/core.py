@@ -202,14 +202,20 @@ def download(
     if mode == "audio":
         logger.info("音声形式: %s", config.audio_format)
     try:
-        metadata_options: dict[str, Any] = {
-            "quiet": True,
-            "no_warnings": False,
-            "logger": YTDLPLogger(),
-            **_network_options(config),
-        }
-        with yt_dlp.YoutubeDL(metadata_options) as metadata_ydl:
-            info = metadata_ydl.extract_info(
+        # Configure the complete yt-dlp behavior before extraction.
+        # Keep extraction and media transfer in the same YoutubeDL instance so
+        # extractor state, request context, cookies, and format decisions are
+        # preserved between the two phases.
+        placeholder_template = str(
+            config.download_dir / "%(title)s.%(ext)s"
+        )
+        options = _build_options(
+            config,
+            mode,
+            placeholder_template,
+        )
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(
                 url,
                 download=False,
             )
@@ -227,23 +233,20 @@ def download(
                 mode,
                 config,
             )
-            options = _build_options(
-                config,
-                mode,
-                output_template,
+            # Output location depends on whether the URL resolved to a
+            # playlist. All other yt-dlp options are fixed before extraction.
+            ydl.params["outtmpl"] = {"default": output_template}
+            result = ydl.process_ie_result(
+                info,
+                download=True,
             )
-            with yt_dlp.YoutubeDL(options) as ydl:
-                result = ydl.process_ie_result(
-                    info,
-                    download=True,
-                )
 
-                if result is None:
-                    logger.warning(
-                        "ダウンロード対象がありませんでした。"
-                    )
-                else:
-                    logger.info("ダウンロード処理が完了しました。")
+            if result is None:
+                logger.warning(
+                    "ダウンロード対象がありませんでした。"
+                )
+            else:
+                logger.info("ダウンロード処理が完了しました。")
     except Exception as exc:
         if "HTTP Error 403" in str(exc):
             logger.error(
