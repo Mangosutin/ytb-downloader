@@ -1,6 +1,6 @@
 # YTB downloader
 
-Version: 0.1.2
+Version: 0.1.3
 
 Windows / Python 3.13 向けの個人用 YouTube ダウンローダーです。
 
@@ -23,6 +23,7 @@ YTB downloader/
 ├── requirements.txt
 ├── run.bat
 ├── run.ps1
+├── run.py
 ├── README.md
 ├── .gitignore
 │
@@ -131,8 +132,8 @@ cookies = ""
 
 ```bat
 run.bat "https://www.youtube.com/watch?v=VIDEO_ID" --mode video
-# PowerShellではrun.ps1を推奨
-.\run.ps1 "https://www.youtube.com/watch?v=VIDEO_ID" -Mode video
+# PowerShellではrun.pyを使用
+python .\run.py 'https://www.youtube.com/watch?v=VIDEO_ID' --mode video
 ```
 
 最高画質の映像・音声を取得し、MP4にマージします。
@@ -147,8 +148,8 @@ run.bat "https://www.youtube.com/watch?v=VIDEO_ID" --mode video
 
 ```bat
 run.bat "https://www.youtube.com/watch?v=VIDEO_ID" --mode audio
-# PowerShellではrun.ps1を推奨
-.\run.ps1 "https://www.youtube.com/watch?v=VIDEO_ID" -Mode audio
+# PowerShellではrun.pyを使用
+python .\run.py 'https://www.youtube.com/watch?v=VIDEO_ID' --mode audio
 ```
 
 既定ではMP3に変換します。
@@ -167,21 +168,27 @@ config.tomlの`default_mode`が使用されます。
 
 ### プレイリスト
 
-プレイリストURLを指定します。URLに`&`が含まれる場合、PowerShellでは`run.ps1`を使用してください。PowerShellから`.bat`を呼び出す際の引数受け渡しを経由せず、PythonへURLを1つの引数として直接渡します。
+URLに`&`が含まれる場合、PowerShellではPythonランチャー`run.py`を直接使用してください。PowerShellの文字列クォートがURL全体を保護し、`cmd.exe`のバッチ引数処理を通さずにPythonへ1つの引数として渡します。
 
 ```powershell
-.\run.ps1 "https://www.youtube.com/playlist?list=PLAYLIST_ID"
-.\run.ps1 "https://www.youtube.com/watch?v=1jdTOxzXskE&list=PLM1t88YmeLxs&pp=0gcJCYgGa94AFGB0sAgC"
+python .\run.py 'https://www.youtube.com/playlist?list=PLAYLIST_ID'
+python .\run.py 'https://www.youtube.com/watch?v=1jdTOxzXskE&list=PLM1t88YmeLxs&pp=0gcJCYgGa94AFGB0sAgC'
 ```
 
-モードや設定ファイルも指定できます。
+音声モードや設定ファイルも指定できます。
 
 ```powershell
-.\run.ps1 "https://www.youtube.com/watch?v=VIDEO_ID&list=PLAYLIST_ID" -Mode audio
-.\run.ps1 "https://www.youtube.com/watch?v=VIDEO_ID" -Config ".\config.toml"
+python .\run.py 'https://www.youtube.com/watch?v=VIDEO_ID&list=PLAYLIST_ID' --mode audio
+python .\run.py 'https://www.youtube.com/watch?v=VIDEO_ID' --config '.\config.toml'
 ```
 
-`run.ps1`と`run.bat`は、プロジェクト内の`.venv`が存在すれば自動的にそのPythonを使用します。`run.bat`はコマンドプロンプトからの利用向けです。
+`.venv`を有効化していない場合も、プロジェクト内の仮想環境があれば`run.ps1`が自動選択します。PowerShellの実行ポリシーでスクリプトがブロックされる場合は、次のようにプロセス単位のBypassで起動できます（システム設定は変更しません）。
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Url 'https://www.youtube.com/watch?v=VIDEO_ID&list=PLAYLIST_ID'
+```
+
+`run.bat`はコマンドプロンプト（cmd.exe）から使うためのランチャーです。PowerShellからURL付きで`run.bat`を呼び出すと、`&`の扱いがシェル間で変わるため避けてください。PowerShellでは上記の`run.py`を推奨します。
 
 プレイリスト名のフォルダを作成し、その中に動画を保存します。
 
@@ -275,7 +282,7 @@ python -m pytest tests/
 
 ## 11. 対象外
 
-v0.1.2時点では以下に対応しません。
+v0.1.3時点では以下に対応しません。
 
 - GUI
 - チャンネル全動画の一括ダウンロード
@@ -284,7 +291,14 @@ v0.1.2時点では以下に対応しません。
 
 ## 12. バージョン
 
-v0.1.2
+v0.1.3
+
+### v0.1.3 の変更点
+
+- PowerShellからURL内に`&`を含むURLを安全に渡せるPythonランチャー`run.py`を追加
+- `run.ps1`をWindows PowerShell 5.1向けに簡素化し、UTF-8 BOM付きで保存
+- `run.bat`をコマンドプロンプト専用ランチャーとして整理
+- PowerShellでは`.bat`を介さずPythonへ直接渡す利用方法をREADMEに明記
 
 ### v0.1.2 の変更点
 

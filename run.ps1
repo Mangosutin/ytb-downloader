@@ -1,44 +1,39 @@
-[CmdletBinding()]
-param(
-    [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateNotNullOrEmpty()]
+﻿param(
     [string]$Url,
-
-    [Parameter()]
-    [ValidateSet("video", "audio")]
     [string]$Mode,
-
-    [Parameter()]
     [string]$Config
 )
 
-$ErrorActionPreference = "Stop"
-$projectRoot = $PSScriptRoot
-$venvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
-$mainScript = Join-Path $projectRoot "main.py"
+if ([string]::IsNullOrWhiteSpace($Url)) {
+    throw 'YouTube URLを指定してください。'
+}
 
-$pythonPrefix = @()
-if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
-    $python = $venvPython
-}
-elseif (Get-Command py -ErrorAction SilentlyContinue) {
-    $python = (Get-Command py).Source
-    $pythonPrefix = @("-3.13")
-}
-elseif (Get-Command python -ErrorAction SilentlyContinue) {
-    $python = (Get-Command python).Source
+$ProjectRoot = $PSScriptRoot
+$EntryScript = Join-Path $ProjectRoot 'run.py'
+$VenvPython = Join-Path $ProjectRoot '.venv\Scripts\python.exe'
+
+if (Test-Path -LiteralPath $VenvPython -PathType Leaf) {
+    $Python = $VenvPython
 }
 else {
-    throw "Python 3.13が見つかりません。.venvを作成するかPython 3.13をインストールしてください。"
+    $PythonCommand = Get-Command 'python' -ErrorAction SilentlyContinue
+    if ($null -eq $PythonCommand) {
+        throw 'Pythonが見つかりません。.venvを作成するかPythonをインストールしてください。'
+    }
+    $Python = $PythonCommand.Source
 }
 
-$pythonArgs = @($mainScript, $Url)
-if ($PSBoundParameters.ContainsKey("Mode")) {
-    $pythonArgs += @("--mode", $Mode)
+if ($Mode -and $Config) {
+    & $Python $EntryScript $Url --mode $Mode --config $Config
 }
-if ($PSBoundParameters.ContainsKey("Config")) {
-    $pythonArgs += @("--config", $Config)
+elseif ($Mode) {
+    & $Python $EntryScript $Url --mode $Mode
+}
+elseif ($Config) {
+    & $Python $EntryScript $Url --config $Config
+}
+else {
+    & $Python $EntryScript $Url
 }
 
-& $python @pythonPrefix @pythonArgs
 exit $LASTEXITCODE
