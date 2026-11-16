@@ -31,6 +31,9 @@ Desktop.ini
 # Application data
 downloads/
 *.log
+*.webm
+*.mp3
+*.mp4
 config.toml
 
 # Python tooling

@@ -1,6 +1,6 @@
 # YTB downloader
 
-Version: 0.1.3
+Version: 0.1.4
 
 Windows / Python 3.13 向けの個人用 YouTube ダウンローダーです。
 
@@ -10,7 +10,8 @@ yt-dlpをPythonライブラリとして利用し、動画・音声を指定し�
 
 - Windows
 - Python 3.13
-- yt-dlp
+- yt-dlp（`yt-dlp[default]`）
+- Deno（YouTubeのJavaScriptチャレンジ処理用）
 - ffmpeg / ffprobe
 
 ## 2. ディレクトリ構成
@@ -100,6 +101,7 @@ ffmpeg_location = "ffmpeg"
 subtitles = false
 thumbnails = false
 embed_metadata = false
+force_ipv4 = true
 
 cookies = ""
 ```
@@ -114,6 +116,7 @@ cookies = ""
 | default_mode | 既定モード | video |
 | audio_format | 音声形式 | mp3 |
 | ffmpeg_location | ffmpegの場所 | ffmpeg |
+| force_ipv4 | yt-dlpの通信をIPv4に固定 | true |
 | subtitles | 字幕保存 | false |
 | thumbnails | サムネイル保存 | false |
 | embed_metadata | メタデータ埋め込み | false |
@@ -250,7 +253,17 @@ Coverの場合は曲名に`(Cover)`を付けます。
 
 解析できない場合は取得したタイトルをフォールバックとして使用します。
 
-## 8. 重複防止
+## 8. 通信設定
+
+既定では`force_ipv4 = true`として、yt-dlpのメタデータ取得とメディア取得の両方をIPv4に固定します。yt-dlpの`source_address = "0.0.0.0"`を使用します。
+
+IPv4固定を無効にする場合は、`config.toml`で次のように指定します。
+
+```toml
+force_ipv4 = false
+```
+
+## 9. 重複防止
 
 yt-dlpのdownload archiveを使用します。
 
@@ -258,7 +271,7 @@ yt-dlpのdownload archiveを使用します。
 
 同じ動画IDは再ダウンロード対象から除外されます。
 
-## 9. ログ
+## 10. ログ
 
 `logs/`に日時付きのログファイルを保存します。
 
@@ -269,29 +282,38 @@ logs/
 └── ytbdl_20261114_120000.log
 ```
 
-ログにはダウンロードの開始・終了、進捗、警告、エラーを記録します。
+ログにはダウンロードの開始・終了、進捗、警告、エラー、yt-dlpのバージョン、IPv4固定の状態を記録します。
 
-## 10. テスト
+HTTP 403が発生した場合は、IPv4設定の状態と確認項目を追加表示します。IPv4固定だけで全ての403が解消するわけではありません。
 
-pytestを使用して命名処理をテストできます。
+## 11. テスト
+
+pytestを使用して設定・URL処理・命名規則・IPv4通信オプションをテストできます。
 
 ```bat
 python -m pip install pytest
 python -m pytest tests/
 ```
 
-## 11. 対象外
+## 12. 対象外
 
-v0.1.3時点では以下に対応しません。
+v0.1.4時点では以下に対応しません。
 
 - GUI
 - チャンネル全動画の一括ダウンロード
 - Cookie認証
 - 年齢制限・メンバー限定などCookieが必要な動画
 
-## 12. バージョン
+## 13. バージョン
 
-v0.1.3
+v0.1.4
+
+### v0.1.4 の変更点
+
+- yt-dlpのメタデータ取得・メディア取得の両方でIPv4を既定使用
+- `force_ipv4`設定を追加し、必要に応じてIPv4固定を無効化できるように変更
+- HTTP 403発生時に、IPv4設定状態と追加確認項目をログへ出力
+- 起動時ログにyt-dlpのバージョンを追加
 
 ### v0.1.3 の変更点
 

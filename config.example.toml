@@ -1,4 +1,4 @@
-# YTB downloader v0.1.2 設定ファイル
+# YTB downloader v0.1.4 設定ファイル
 
 # ダウンロード先
 # 相対パスは設定ファイルの配置場所を基準にする
@@ -24,6 +24,10 @@ audio_format = "mp3"
 # 既定ではツール配下のffmpegフォルダ
 # Windowsの絶対パスを指定する場合は、TOMLのリテラル文字列を使う: 'E:\app\ffmpeg'
 ffmpeg_location = "ffmpeg"
+
+# YouTubeへの接続でIPv4を強制する
+# IPv4経路での接続を優先する場合に有効（全ての403を解消するものではない）
+force_ipv4 = true
 
 # 字幕を保存する
 subtitles = false

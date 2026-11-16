@@ -14,6 +14,14 @@ from ytbdl.naming import (
 logger = logging.getLogger(__name__)
 
 
+def _network_options(config: Config) -> dict[str, str]:
+    """Return yt-dlp network options derived from the application config."""
+    if config.force_ipv4:
+        # yt-dlp's --force-ipv4 maps to source_address="0.0.0.0".
+        return {"source_address": "0.0.0.0"}
+    return {}
+
+
 class YTDLPLogger:
     def debug(self, message: str) -> None:
         if message.startswith("[debug] "):
@@ -139,6 +147,7 @@ def _build_options(
         "writesubtitles": config.subtitles,
         "allsubtitles": config.subtitles,
         "writethumbnail": config.thumbnails,
+        **_network_options(config),
     }
     ffmpeg_location = _get_ffmpeg_location(config)
     if ffmpeg_location:
@@ -180,14 +189,26 @@ def download(
     logger.info("ダウンロードを開始します。")
     logger.info("URL: %s", url)
     logger.info("モード: %s", mode)
+    logger.info(
+        "IPv4固定: %s",
+        "有効" if config.force_ipv4 else "無効",
+    )
+    yt_dlp_version = getattr(
+        getattr(yt_dlp, "version", None),
+        "__version__",
+        "unknown",
+    )
+    logger.info("yt-dlp version: %s", yt_dlp_version)
     if mode == "audio":
         logger.info("音声形式: %s", config.audio_format)
     try:
-        with yt_dlp.YoutubeDL({
+        metadata_options: dict[str, Any] = {
             "quiet": True,
             "no_warnings": False,
             "logger": YTDLPLogger(),
-        }) as metadata_ydl:
+            **_network_options(config),
+        }
+        with yt_dlp.YoutubeDL(metadata_options) as metadata_ydl:
             info = metadata_ydl.extract_info(
                 url,
                 download=False,
@@ -223,6 +244,20 @@ def download(
                     )
                 else:
                     logger.info("ダウンロード処理が完了しました。")
-    except Exception:
+    except Exception as exc:
+        if "HTTP Error 403" in str(exc):
+            logger.error(
+                "YouTubeからメディアデータを取得できませんでした（HTTP 403）。"
+            )
+            if config.force_ipv4:
+                logger.error(
+                    "IPv4固定は有効です。yt-dlpの更新状況、動画の配信条件、"
+                    "PO Token関連の要件、ネットワーク側の拒否を確認してください。"
+                )
+            else:
+                logger.error(
+                    "IPv4固定は無効です。config.tomlのforce_ipv4 = trueを"
+                    "試してください。"
+                )
         logger.exception("ダウンロードに失敗しました。")
         raise

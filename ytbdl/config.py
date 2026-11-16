@@ -17,6 +17,7 @@ class Config:
     default_mode: str
     audio_format: str
     ffmpeg_location: Path
+    force_ipv4: bool
     subtitles: bool
     thumbnails: bool
     embed_metadata: bool
@@ -107,6 +108,7 @@ def load_config(
         default_mode=default_mode,
         audio_format=audio_format,
         ffmpeg_location=ffmpeg_location,
+        force_ipv4=_get_bool(data, "force_ipv4", True),
         subtitles=_get_bool(data, "subtitles", False),
         thumbnails=_get_bool(data, "thumbnails", False),
         embed_metadata=_get_bool(data, "embed_metadata", False),
