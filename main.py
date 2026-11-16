@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ytbdl import APP_VERSION
 from ytbdl.config import Config, load_config
+from ytbdl.cli import resolve_url
 from ytbdl.core import download
 
 
@@ -61,7 +62,8 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    if not args.url:
+    url = resolve_url(args.url)
+    if not url:
         parser.error("URLを指定してください。")
     app_dir = Path(__file__).resolve().parent
     try:
@@ -78,7 +80,7 @@ def main() -> int:
             APP_VERSION,
             mode,
         )
-        download(args.url, mode, config)
+        download(url, mode, config)
         logging.getLogger(__name__).info("処理が終了しました。")
         return 0
     except Exception:

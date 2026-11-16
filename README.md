@@ -1,6 +1,6 @@
 # YTB downloader
 
-Version: 0.1.1
+Version: 0.1.2
 
 Windows / Python 3.13 向けの個人用 YouTube ダウンローダーです。
 
@@ -22,6 +22,7 @@ YTB downloader/
 ├── config.toml
 ├── requirements.txt
 ├── run.bat
+├── run.ps1
 ├── README.md
 ├── .gitignore
 │
@@ -130,6 +131,8 @@ cookies = ""
 
 ```bat
 run.bat "https://www.youtube.com/watch?v=VIDEO_ID" --mode video
+# PowerShellではrun.ps1を推奨
+.\run.ps1 "https://www.youtube.com/watch?v=VIDEO_ID" -Mode video
 ```
 
 最高画質の映像・音声を取得し、MP4にマージします。
@@ -144,6 +147,8 @@ run.bat "https://www.youtube.com/watch?v=VIDEO_ID" --mode video
 
 ```bat
 run.bat "https://www.youtube.com/watch?v=VIDEO_ID" --mode audio
+# PowerShellではrun.ps1を推奨
+.\run.ps1 "https://www.youtube.com/watch?v=VIDEO_ID" -Mode audio
 ```
 
 既定ではMP3に変換します。
@@ -162,14 +167,21 @@ config.tomlの`default_mode`が使用されます。
 
 ### プレイリスト
 
-プレイリストURLを指定します。URLに`&`が含まれていても、URL全体をダブルクォートで囲んでください。
+プレイリストURLを指定します。URLに`&`が含まれる場合、PowerShellでは`run.ps1`を使用してください。PowerShellから`.bat`を呼び出す際の引数受け渡しを経由せず、PythonへURLを1つの引数として直接渡します。
 
-```bat
-run.bat "https://www.youtube.com/playlist?list=PLAYLIST_ID"
-run.bat "https://www.youtube.com/watch?v=VIDEO_ID&list=PLAYLIST_ID&index=1"
+```powershell
+.\run.ps1 "https://www.youtube.com/playlist?list=PLAYLIST_ID"
+.\run.ps1 "https://www.youtube.com/watch?v=1jdTOxzXskE&list=PLM1t88YmeLxs&pp=0gcJCYgGa94AFGB0sAgC"
 ```
 
-PowerShellから実行する場合も、同じようにURL全体をダブルクォートで囲みます。`run.bat`はプロジェクト内の`.venv`が存在すれば自動的にそのPythonを使用します。
+モードや設定ファイルも指定できます。
+
+```powershell
+.\run.ps1 "https://www.youtube.com/watch?v=VIDEO_ID&list=PLAYLIST_ID" -Mode audio
+.\run.ps1 "https://www.youtube.com/watch?v=VIDEO_ID" -Config ".\config.toml"
+```
+
+`run.ps1`と`run.bat`は、プロジェクト内の`.venv`が存在すれば自動的にそのPythonを使用します。`run.bat`はコマンドプロンプトからの利用向けです。
 
 プレイリスト名のフォルダを作成し、その中に動画を保存します。
 
@@ -263,7 +275,7 @@ python -m pytest tests/
 
 ## 11. 対象外
 
-v0.1.1時点では以下に対応しません。
+v0.1.2時点では以下に対応しません。
 
 - GUI
 - チャンネル全動画の一括ダウンロード
@@ -272,10 +284,11 @@ v0.1.1時点では以下に対応しません。
 
 ## 12. バージョン
 
-v0.1.1
+v0.1.2
 
-### v0.1.1 の変更点
+### v0.1.2 の変更点
 
-- `run.bat`がプロジェクト内の`.venv`を優先して使用するように変更
-- URLを個別に引用して渡し、プレイリストURL内の`&`がコマンド区切りとして扱われないよう修正
-- Windows絶対パスをTOMLに記述する際の注意点と、設定エラー時の案内を追加
+- PowerShell用の`run.ps1`を追加し、URLをPythonへ直接1引数として渡すように変更
+- `run.bat`はURLを環境変数経由で渡し、Python起動コマンドへURLを再展開しないように変更
+- コマンドラインURLが省略された場合に、ランチャーから渡された環境変数を利用する機能を追加
+- PowerShellでのプレイリストURLの実行例を追加

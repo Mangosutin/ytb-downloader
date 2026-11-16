@@ -1,12 +1,20 @@
 @echo off
-setlocal
+setlocal DisableDelayedExpansion
 
 cd /d "%~dp0"
 
-rem Use the project virtual environment when it exists.
+if "%~1"=="" (
+    echo Usage: run.bat "YouTube URL" [--mode video^|audio] [--config PATH]
+    exit /b 2
+)
+
+rem Keep the URL out of the command line after capture. This avoids a second
+rem interpretation of ampersands by cmd.exe when forwarding arguments.
+set "YTB_DOWNLOADER_URL=%~1"
+shift
+
 if exist "%~dp0.venv\Scripts\python.exe" goto use_venv
 
-rem Fall back to the Python 3.13 launcher, then python on PATH.
 where py >nul 2>nul
 if not errorlevel 1 goto use_py
 
@@ -19,13 +27,13 @@ pause
 exit /b 1
 
 :use_venv
-"%~dp0.venv\Scripts\python.exe" "%~dp0main.py" "%~1" %2 %3 %4 %5 %6 %7 %8 %9
+"%~dp0.venv\Scripts\python.exe" "%~dp0main.py" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %errorlevel%
 
 :use_py
-py -3.13 "%~dp0main.py" "%~1" %2 %3 %4 %5 %6 %7 %8 %9
+py -3.13 "%~dp0main.py" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %errorlevel%
 
 :use_python
-python "%~dp0main.py" "%~1" %2 %3 %4 %5 %6 %7 %8 %9
+python "%~dp0main.py" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %errorlevel%
