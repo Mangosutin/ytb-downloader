@@ -48,8 +48,20 @@ def load_config(
     config_path = config_path.expanduser().resolve()
     app_dir = (app_dir or Path(__file__).resolve().parent.parent).resolve()
     if config_path.exists():
-        with config_path.open("rb") as file:
-            data = tomllib.load(file)
+        try:
+            with config_path.open("rb") as file:
+                data = tomllib.load(file)
+        except tomllib.TOMLDecodeError as exc:
+            message = str(exc)
+            if r"Unescaped '\' in a string" in message:
+                message += (
+                    "\nWindowsのパスは、"
+                    "ffmpeg_location = 'E:\\ffmpeg' のように"
+                    "シングルクォートで囲んでください。"
+                )
+            raise ValueError(
+                f"設定ファイルのTOML形式が不正です: {config_path}\n{message}"
+            ) from exc
         if not isinstance(data, dict):
             raise ValueError("設定ファイルの形式が不正です。")
         base_dir = config_path.parent

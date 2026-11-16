@@ -22,6 +22,7 @@ audio_format = "mp3"
 # ffmpegの配置先
 # フォルダまたは実行ファイルを指定できる
 # 既定ではツール配下のffmpegフォルダ
+# Windowsの絶対パスを指定する場合は、TOMLのリテラル文字列を使う: 'E:\app\ffmpeg'
 ffmpeg_location = "ffmpeg"
 
 # 字幕を保存する

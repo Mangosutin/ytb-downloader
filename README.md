@@ -1,6 +1,6 @@
 # YTB downloader
 
-Version: 0.1.0
+Version: 0.1.1
 
 Windows / Python 3.13 向けの個人用 YouTube ダウンローダーです。
 
@@ -69,7 +69,17 @@ ffmpegは外部同梱とし、requirements.txtには含めません。
 
 別の場所に配置している場合は、config.tomlの`ffmpeg_location`で指定できます。
 
-フォルダまたは実行ファイルのパスを指定してください。
+フォルダまたは実行ファイルのパスを指定してください。Windowsの絶対パスを指定するときは、TOMLのバックスラッシュがエスケープ文字として扱われないよう、次のいずれかの形式にしてください。
+
+```toml
+# 推奨: シングルクォートのリテラル文字列
+ffmpeg_location = 'E:\app\ffmpeg'
+
+# または、バックスラッシュを2つずつ記述
+ffmpeg_location = "E:\\app\\ffmpeg"
+```
+
+通常はプロジェクト直下の`ffmpeg`フォルダを使う`ffmpeg_location = "ffmpeg"`のままで問題ありません。
 
 ## 5. 設定ファイル
 
@@ -152,11 +162,14 @@ config.tomlの`default_mode`が使用されます。
 
 ### プレイリスト
 
-プレイリストURLを指定します。
+プレイリストURLを指定します。URLに`&`が含まれていても、URL全体をダブルクォートで囲んでください。
 
 ```bat
 run.bat "https://www.youtube.com/playlist?list=PLAYLIST_ID"
+run.bat "https://www.youtube.com/watch?v=VIDEO_ID&list=PLAYLIST_ID&index=1"
 ```
+
+PowerShellから実行する場合も、同じようにURL全体をダブルクォートで囲みます。`run.bat`はプロジェクト内の`.venv`が存在すれば自動的にそのPythonを使用します。
 
 プレイリスト名のフォルダを作成し、その中に動画を保存します。
 
@@ -250,7 +263,7 @@ python -m pytest tests/
 
 ## 11. 対象外
 
-v0.1.0では以下に対応しません。
+v0.1.1時点では以下に対応しません。
 
 - GUI
 - チャンネル全動画の一括ダウンロード
@@ -259,4 +272,10 @@ v0.1.0では以下に対応しません。
 
 ## 12. バージョン
 
-v0.1.0
+v0.1.1
+
+### v0.1.1 の変更点
+
+- `run.bat`がプロジェクト内の`.venv`を優先して使用するように変更
+- URLを個別に引用して渡し、プレイリストURL内の`&`がコマンド区切りとして扱われないよう修正
+- Windows絶対パスをTOMLに記述する際の注意点と、設定エラー時の案内を追加
