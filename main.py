@@ -177,9 +177,7 @@ def main() -> int:
         logger.info("処理が終了しました。")
         return 0
     except Exception:
-        logging.getLogger(__name__).exception(
-            "処理中にエラーが発生しました。"
-        )
+        logging.getLogger(__name__).exception("処理中にエラーが発生しました。")
         return 1
 
 
