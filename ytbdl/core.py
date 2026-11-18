@@ -352,6 +352,7 @@ def download(
         extraction_options = _build_options(
             config,
             mode,
+            playlist_item=playlist_item,
             placeholder_template,
             extraction_only=True,
         )
@@ -393,6 +394,8 @@ def download(
                     )
                     playlist_item = None
                     download_url = _single_video_url(url)
+                    extraction_options.pop("playlist_items", None)
+                    extract_ydl.params.pop("playlist_items", None)
                     info = extract_ydl.extract_info(
                         download_url,
                         download=False,
@@ -407,13 +410,17 @@ def download(
                             "動画情報を取得できませんでした。"
                         )
                     _prepare_entries(info, mode, config)
-                elif entries and index_number <= len(entries):
-                    selected = entries[index_number - 1]
+                elif entries:
+                    selected = entries[0] if len(entries) == 1 else  entries[index_number - 1] if index_number <= len(entries) else None
                     if isinstance(selected, dict) and _archive_contains(
                         config, selected.get("id")
                     ):
                         logger.info("すべて取得済みです。")
                         return
+        # Narrow to the selected entry.
+            selected_info = dict(info)
+            selected_info["entries"] = [selected] if selected else []
+            info = selected_info
             output_template = _build_output_template(
                 info,
                 mode,
