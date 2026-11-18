@@ -205,7 +205,6 @@ watch?v=...&list=...&index=N のように index を指定した場合は、そ�
 ### 音声
 
 曲名 (feat. アーティスト) (Remix) (Cover) - アーティスト.mp3
-
 存在しない要素は省略します。
 
 #### feat表記
@@ -247,7 +246,6 @@ Coverの場合は曲名に(Cover)を付けます。
 ## 8. 通信設定
 
 既定ではforce_ipv4 = trueとして、yt-dlpのメタデータ取得とメディア取得の両方をIPv4に固定します。yt-dlpのsource_address = "0.0.0.0"を使用します。
-
 IPv4固定を無効にする場合は、config.tomlで次のように指定します。
 
 ```toml
