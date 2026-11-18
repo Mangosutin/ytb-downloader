@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -10,6 +12,7 @@ import yt_dlp
 from yt_dlp.utils import EntryNotInPlaylist
 
 from ytbdl.config import Config
+from ytbdl.musicbrainz import lookup_genre
 from ytbdl.naming import (
     build_audio_name,
     sanitize_filename,
@@ -116,7 +119,6 @@ def _single_video_url(url: str) -> str:
 
 def _resolve_playlist_item_selection(url: str) -> tuple[str | None, str]:
     """index 付きプレイリスト URL の対象曲を判定する。
-
     list と index の両方がある場合、その index（1始まり）の1曲だけを
     ダウンロード対象とする。index が不正な場合は警告を出して
     v の単体動画 URL へフォールバックする。
@@ -156,6 +158,21 @@ def _prepare_entry(
         return
     naming = build_audio_name(entry)
     entry["title"] = naming["filename"]
+    if config.genre_lookup and naming["track"] and naming["artist"]:
+        try:
+            genre = lookup_genre(
+                naming["track"],
+                naming["artist"],
+            )
+        except Exception as exc:
+            logger.warning(
+                "MusicBrainz のジャンル照合に失敗しました: %s",
+                exc,
+            )
+            genre = None
+        if genre:
+            entry["genre"] = genre
+            entry["genres"] = [genre]
     if config.embed_metadata:
         entry["track"] = naming["track"]
         if naming["artist"]:
@@ -185,107 +202,244 @@ def _prepare_entries(
     _prepare_entry(info, mode, config)
 
 
-def _build_output_template(
-    info: dict[str, Any],
-    mode: str,
-    config: Config,
-) -> str:
-    is_playlist = (
-        info.get("_type") in ("playlist", "multi_video")
-        or bool(info.get("entries"))
-    )
-    if is_playlist:
-        playlist_title = sanitize_filename(
-            str(info.get("title") or "playlist")
+_STREAMHASH_RE = re.compile(r"SHA256=([0-9a-fA-F]{64})")
+
+
+def parse_streamhash(output: str) -> str | None:
+    """ffmpeg streamhash の出力から SHA-256 を取得する。"""
+    match = _STREAMHASH_RE.search(output)
+    if not match:
+        return None
+    return match.group(1).lower()
+
+
+def _calculate_audio_stream_hash(
+    ffmpeg: str,
+    filepath: Path,
+) -> str | None:
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-v", "error",
+                "-i", str(filepath),
+                "-map", "0:a:0",
+                "-f", "streamhash",
+                "-hash", "sha256",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
         )
-        output_dir = config.download_dir / playlist_title
+    except OSError as exc:
+        logger.warning(
+            "音声ストリームハッシュの計算に失敗しました: %s: %s",
+            filepath,
+            exc,
+        )
+        return None
+    if result.returncode != 0:
+        logger.warning(
+            "音声ストリームハッシュの計算に失敗しました: %s: %s",
+            filepath,
+            result.stderr.strip(),
+        )
+        return None
+    return parse_streamhash(result.stdout)
+
+
+def _embed_audio_stream_hash(
+    ffmpeg: str,
+    filepath: Path,
+    stream_hash: str,
+) -> None:
+
+    with tempfile.NamedTemporaryFile(
+        suffix=filepath.suffix,
+        dir=filepath.parent,
+        delete=False,
+    ) as handle:
+        temporary = Path(handle.name)
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-v", "error",
+                "-i", str(filepath),
+                "-map", "0",
+                "-codec", "copy",
+                "-metadata",
+                f"AUDIO_STREAM_SHA256={stream_hash}",
+                "-y",
+                str(temporary),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "音声ストリームハッシュの埋め込みに失敗しました: %s: %s",
+                filepath,
+                result.stderr.strip(),
+            )
+            return
+        temporary.replace(filepath)
+    except OSError as exc:
+        logger.warning(
+            "音声ストリームハッシュの埋め込みに失敗しました: %s: %s",
+            filepath,
+            exc,
+        )
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _record_audio_stream_hash(
+    filepath: Path,
+    config: Config,
+) -> None:
+    ffmpeg = _get_ffmpeg_location(config)
+    if not ffmpeg:
+        return
+    if not filepath.is_file():
+        logger.warning(
+            "音声ファイルが見つからないためハッシュを記録できません: %s",
+            filepath,
+        )
+        return
+    stream_hash = _calculate_audio_stream_hash(ffmpeg, filepath)
+    if stream_hash is None:
+        return
+    _embed_audio_stream_hash(
+        ffmpeg,
+        filepath,
+        stream_hash,
+    )
+
+
+def _requested_audio_paths(info: dict[str, Any]) -> list[Path]:
+    paths: list[Path] = []
+    for item in info.get("requested_downloads") or []:
+        if not isinstance(item, dict):
+            continue
+        filepath = item.get("filepath")
+        if isinstance(filepath, str) and filepath:
+            paths.append(Path(filepath))
+    return paths
+
+
+
+def _build_output_template(
+    config: Config,
+    mode: str,
+    info: dict[str, Any],
+) -> str:
+    if mode == "audio":
+        mode_dir = "audio"
     else:
-        output_dir = config.download_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
-    if mode == "video":
-        filename = "%(title)s [%(id)s].%(ext)s"
-    else:
-        filename = "%(title)s.%(ext)s"
-    return str(output_dir / filename)
+        mode_dir = "video"
+    if info.get("_type") in ("playlist", "multi_video"):
+        playlist = info.get("title") or info.get("uploader") or "playlist"
+        safe_title = sanitize_filename(str(playlist))
+        base_dir = config.download_dir / mode_dir / safe_title or config.download_dir / mode_dir
+        if mode == "audio":
+            return str(base_dir / "%(playlist_index)02d - %(title)s.%(ext)s")
+        return str(base_dir / "%(playlist_index)02d - %(title)s.%(ext)s")
+    return str(config.download_dir / mode_dir / "%(title)s.%(ext)s")
 
 
 def _build_options(
     config: Config,
-    mode: str,
     output_template: str,
-    playlist_item: str | None = None,
+    mode: str,
+    download: bool = False,
     extraction_only: bool = False,
 ) -> dict[str, Any]:
     options: dict[str, Any] = {
-        "outtmpl": {
-            "default": output_template,
-        },
-        "noplaylist": False,
+        "outtmpl": output_template,
         "logger": YTDLPLogger(),
         "progress_hooks": [_progress_hook],
-        "ignoreerrors": False,
-        "continuedl": True,
-        "retries": 3,
-        "fragment_retries": 3,
         "quiet": True,
-        "no_warnings": False,
-        "writesubtitles": config.subtitles,
-        "allsubtitles": config.subtitles,
-        "writethumbnail": config.thumbnails,
-        **_network_options(config),
+        "no_warnings": True,
+        "noplaylist": False,
+        "ignoreerrors": True,
+        "no_color": True,
+        "restrictfilenames": False,
     }
-    if not extraction_only:
-        # download_archive はダウンロード用のインスタンスでのみ有効化する。
-        # 抽出時に含めると、アーカイブ済みエントリが抽出段階で除外される。
+    options.update(_network_options(config))
+    ffmpeg = _get_ffmpeg_location(config)
+    if ffmpeg:
+        options["ffmpeg_location"] = ffmpeg
+    if config.archive_file:
         options["download_archive"] = str(config.archive_file)
-    if playlist_item is not None:
-        options["playlist_items"] = playlist_item
-    ffmpeg_location = _get_ffmpeg_location(config)
-    if ffmpeg_location:
-        options["ffmpeg_location"] = ffmpeg_location
-    if mode == "video":
-        options.update({
-            "format": "bestvideo+bestaudio/best",
-            "merge_output_format": "mp4",
-        })
-    elif mode == "audio":
+    if mode == "audio":
         options["format"] = "bestaudio/best"
-        postprocessors: list[dict[str, Any]] = []
         if config.audio_format == "mp3":
-            postprocessors.append({
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": str(config.audio_bitrate),
-            })
-            if config.embed_album_art:
-                # アルバムアート埋め込みにはサムネイル取得が必要。
-                options["writethumbnail"] = True
-                postprocessors.append({"key": "EmbedThumbnail"})
-            if config.embed_metadata:
-                postprocessors.append({
-                    "key": "FFmpegMetadata",
-                    "add_metadata": True,
-                })
+            postprocessors: list[dict[str, Any]] = [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": str(config.audio_bitrate),
+                },
+            ]
             audio_args: list[str] = []
-            if config.audio_sample_rate is not None:
-                audio_args += ["-ar", str(config.audio_sample_rate)]
             if config.audio_bit_depth is not None:
+                sample_format = _SAMPLE_FORMATS.get(
+                    config.audio_bit_depth,
+                    "s16p",
+                )
                 audio_args += [
                     "-sample_fmt",
-                    _SAMPLE_FORMATS[config.audio_bit_depth],
+                    sample_format,
+                ]
+            if config.audio_sample_rate is not None:
+                audio_args += [
+                    "-ar",
+                    str(config.audio_sample_rate),
                 ]
             if audio_args:
                 options["postprocessor_args"] = {
                     "FFmpegExtractAudio": audio_args,
                 }
-        elif config.embed_metadata:
-            postprocessors.append({
-                "key": "FFmpegMetadata",
-                "add_metadata": True,
-            })
-        if postprocessors:
+            elif config.embed_metadata:
+                postprocessors.append({"key": "FFmpegMetadata"})
+            if config.embed_album_art:
+                postprocessors.append(
+                    {
+                        "key": "EmbedThumbnail",
+                        "already_have_thumbnail": False,
+                    },
+                )
             options["postprocessors"] = postprocessors
-
+        else:
+            postprocessors = []
+            if config.embed_metadata:
+                postprocessors.append({"key": "FFmpegMetadata"})
+            if config.embed_album_art:
+                postprocessors.append(
+                    {
+                        "key": "EmbedThumbnail",
+                        "already_have_thumbnail": False,
+                    },
+                )
+            if postprocessors:
+                options["postprocessors"] = postprocessors
+    else:
+        options["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+        if config.embed_metadata:
+            options["postprocessors"] = [{"key": "FFmpegMetadata"}]
+    if config.subtitles:
+        options["writesubtitles"] = True
+        options["subtitleslangs"] = ["ja", "en"]
+    if config.thumbnails:
+        options["writethumbnail"] = True
+    if extraction_only:
+        options["skip_download"] = True
     return options
 
 
@@ -294,167 +448,117 @@ def _cleanup_embed_thumbnails(
     output_template: str,
     mode: str,
 ) -> None:
-    """埋め込み用の一時サムネイルを削除する。"""
-    if mode != "audio":
+    if mode != "audio" or not config.embed_album_art:
         return
-    if not config.embed_album_art or config.thumbnails:
+    output_path = Path(output_template)
+    directory = output_path.parent
+    if not directory.exists():
         return
-    output_dir = Path(output_template).parent
-    targets: list[Path] = []
-    for pattern in ("*.jpg", "*.jpeg", "*.webp", "*.png"):
-        targets += list(output_dir.glob(pattern))
-        if output_dir != config.download_dir:
-            targets += list(config.download_dir.glob(pattern))
-    for target in targets:
+    for thumbnail in directory.glob("*.webp"):
         try:
-            target.unlink()
+            thumbnail.unlink()
         except OSError:
-            logger.debug(
+            logger.warning(
                 "サムネイルの削除に失敗しました: %s",
-                target,
+                thumbnail,
+            )
+    for thumbnail in directory.glob("*.jpg"):
+        try:
+            thumbnail.unlink()
+        except OSError:
+            logger.warning(
+                "サムネイルの削除に失敗しました: %s",
+                thumbnail,
             )
 
 
-def download(
-    url: str,
-    mode: str,
-    config: Config,
-) -> None:
+def download(url: str, mode: str, config: Config) -> None:
     if mode not in ("video", "audio"):
-        raise ValueError(f"不正なモードです:{mode}")
+        raise ValueError(f"不正なモードです: {mode}")
     if not url or not url.strip():
-        raise ValueError("URLが指定されていません。")
+        raise ValueError("URLを指定してください。")
     config.download_dir.mkdir(parents=True, exist_ok=True)
-    config.archive_file.parent.mkdir(parents=True, exist_ok=True)
     config.log_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("ダウンロードを開始します。")
-    logger.info("URL: %s", url)
-    logger.info("モード: %s", mode)
     logger.info(
-        "IPv4固定: %s",
-        "有効" if config.force_ipv4 else "無効",
+        "YTB downloader v%s started. yt-dlp version=%s",
+        APP_VERSION,
+        yt_dlp.version.__version__,
     )
-    yt_dlp_version = getattr(
-        getattr(yt_dlp, "version", None),
-        "__version__",
-        "unknown",
-    )
-    logger.info("yt-dlp version: %s", yt_dlp_version)
-    if mode == "audio":
-        logger.info("音声形式: %s", config.audio_format)
     try:
-        # index 付きプレイリスト URL の対象曲を判定する。
-        # 不正な index はここで単体動画 URL へフォールバックする。
         playlist_item, download_url = _resolve_playlist_item_selection(url)
-        placeholder_template = str(
-            config.download_dir / "%(title)s.%(ext)s"
-        )
         extraction_options = _build_options(
             config,
+            "%(title)s.%(ext)s",
             mode,
-            placeholder_template,
             extraction_only=True,
         )
         with yt_dlp.YoutubeDL(extraction_options) as extract_ydl:
-            info = extract_ydl.extract_info(
-                download_url,
-                download=False,
-            )
-            if not info:
-                if _archive_contains(config, _video_id_from_url(download_url)):
-                    logger.info("すべて取得済みです。")
-                    return
-                raise RuntimeError(
-                    "動画情報を取得できませんでした。"
-                )
-            if info.get("_type") == "channel":
-                raise ValueError(
-                    "チャンネル全動画の一括ダウンロードには対応していません。"
-                )
-            _prepare_entries(info, mode, config)
-            if info.get("_type") in ("playlist", "multi_video") and not info.get(
-                "entries"
-            ):
+            info = extract_ydl.extract_info(download_url, download=False)
+        if info is None:
+            video_id = _video_id_from_url(download_url)
+            if _archive_contains(config, video_id):
                 logger.info("すべて取得済みです。")
                 return
-            if playlist_item is not None and info.get("_type") in (
-                "playlist",
-                "multi_video",
-            ):
-                entries = info.get("entries") or []
-                total = info.get("playlist_count") or len(entries)
-                index_number = int(playlist_item)
-                if total and index_number > total:
-                    logger.warning(
-                        "プレイリストの index が範囲外です: %s（全%s件）。"
-                        "単体動画としてダウンロードします。",
-                        playlist_item,
-                        total,
-                    )
-                    playlist_item = None
-                    download_url = _single_video_url(url)
-                    info = extract_ydl.extract_info(
-                        download_url,
-                        download=False,
-                    )
-                    if not info:
-                        if _archive_contains(
-                            config, _video_id_from_url(download_url)
-                        ):
-                            logger.info("すべて取得済みです。")
-                            return
-                        raise RuntimeError(
-                            "動画情報を取得できませんでした。"
-                        )
-                    _prepare_entries(info, mode, config)
-                elif entries and index_number <= len(entries):
-                    selected = entries[index_number - 1]
-                    if isinstance(selected, dict) and _archive_contains(
-                        config, selected.get("id")
-                    ):
-                        logger.info("すべて取得済みです。")
-                        return
-            output_template = _build_output_template(
-                info,
-                mode,
-                config,
-            )
+            raise RuntimeError("抽出に失敗しました。")
+        if info.get("_type") == "channel":
+            raise ValueError("チャンネルURLには対応していません。")
+        _prepare_entries(info, mode, config)
+        entries = info.get("entries")
+        if entries is not None and len(list(entries)) == 0:
+            logger.info("すべて取得済みです。")
+            return
+        if playlist_item is not None:
+            playlist_entries = list(entries or [])
+            playlist_size = len(playlist_entries)
+            item_number = int(playlist_item)
+            if item_number > playlist_size or item_number < 1:
+                logger.warning(
+                    "指定された index %s はプレイリストの範囲外です。"
+                    "単体動画としてダウンロードします。",
+                    playlist_item,
+                )
+                single_url = _single_video_url(url)
+                download(single_url, mode, config)
+                return
+            entry = playlist_entries[item_number - 1]
+            if isinstance(entry, dict):
+                video_id = entry.get("id") or _video_id_from_url(url)
+                if _archive_contains(config, video_id):
+                    logger.info("すべて取得済みです。")
+                    return
+        output_template = _build_output_template(config, mode, info)
         download_options = _build_options(
             config,
-            mode,
             output_template,
-            playlist_item=playlist_item,
+            mode,
+            download=True,
         )
         with yt_dlp.YoutubeDL(download_options) as download_ydl:
             try:
-                result = download_ydl.process_ie_result(
-                    info,
-                    download=True,
-                )
+                result = download_ydl.process_ie_result(info, download=True)
             except EntryNotInPlaylist:
                 logger.info("すべて取得済みです。")
                 return
             if result is None:
-                logger.warning(
-                    "ダウンロード対象がありませんでした。"
-                )
+                logger.warning("ダウンロード結果が取得できませんでした。")
             else:
                 logger.info("ダウンロード処理が完了しました。")
+            if mode == "audio" and config.record_audio_hash:
+                for filepath in _requested_audio_paths(info):
+                    try:
+                        _record_audio_stream_hash(filepath, config)
+                    except Exception as exc:
+                        logger.warning(
+                            "音声ストリームハッシュの記録に失敗しました: %s: %s",
+                            filepath,
+                            exc,
+                        )
         _cleanup_embed_thumbnails(config, output_template, mode)
     except Exception as exc:
         if "HTTP Error 403" in str(exc):
             logger.error(
-                "YouTubeからメディアデータを取得できませんでした（HTTP 403）。"
+                "HTTP 403 エラーが発生しました。YouTube側の制限の可能性があります。"
+                "force_ipv4 を有効にすると回避できる場合があります。",
             )
-            if config.force_ipv4:
-                logger.error(
-                    "IPv4固定は有効です。yt-dlpの更新状況、動画の配信条件、"
-                    "PO Token関連の要件、ネットワーク側の拒否を確認してください。"
-                )
-            else:
-                logger.error(
-                    "IPv4固定は無効です。config.tomlのforce_ipv4 = trueを"
-                    "試してください。"
-                )
         logger.exception("ダウンロードに失敗しました。")
         raise
