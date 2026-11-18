@@ -417,11 +417,11 @@ def download(
                     ):
                         logger.info("すべて取得済みです。")
                         return
-                        # Narrow to the selected entry.
-            if selected is not None:
-                selected_info = dict(info)
-                selected_info["entries"] = [selected] if selected else []
-                info = selected_info
+                    # Narrow to the selected entry.
+                    if selected is not None:
+                        selected_info = dict(info)
+                        selected_info["entries"] = [selected]
+                        info = selected_info
             output_template = _build_output_template(
                 info,
                 mode,
