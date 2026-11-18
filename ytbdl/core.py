@@ -352,8 +352,8 @@ def download(
         extraction_options = _build_options(
             config,
             mode,
-            playlist_item=playlist_item,
             placeholder_template,
+            playlist_item=playlist_item,
             extraction_only=True,
         )
         with yt_dlp.YoutubeDL(extraction_options) as extract_ydl:
