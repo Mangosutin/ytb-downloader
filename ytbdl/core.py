@@ -119,6 +119,7 @@ def _single_video_url(url: str) -> str:
 
 def _resolve_playlist_item_selection(url: str) -> tuple[str | None, str]:
     """index 付きプレイリスト URL の対象曲を判定する。
+
     list と index の両方がある場合、その index（1始まり）の1曲だけを
     ダウンロード対象とする。index が不正な場合は警告を出して
     v の単体動画 URL へフォールバックする。
@@ -415,25 +416,26 @@ def _build_options(
                     "key": "FFmpegMetadata",
                     "add_metadata": True,
                 })
-            audio_args: list[str] = []
-            if config.audio_sample_rate is not None:
-                audio_args += ["-ar", str(config.audio_sample_rate)]
-            if config.audio_bit_depth is not None:
-                audio_args += [
-                    "-sample_fmt",
-                    _SAMPLE_FORMATS[config.audio_bit_depth],
-                ]
-            if audio_args:
-                options["postprocessor_args"] = {
-                    "FFmpegExtractAudio": audio_args,
-                }
-            elif config.embed_metadata:
-                postprocessors.append({
-                    "key": "FFmpegMetadata",
-                    "add_metadata": True,
-                })
-            if postprocessors:
-                options["postprocessors"] = postprocessors
+        audio_args: list[str] = []
+        if config.audio_sample_rate is not None:
+            audio_args += ["-ar", str(config.audio_sample_rate)]
+        if config.audio_bit_depth is not None:
+            audio_args += [
+                "-sample_fmt",
+                _SAMPLE_FORMATS[config.audio_bit_depth],
+            ]
+        if audio_args:
+            options["postprocessor_args"] = {
+                "FFmpegExtractAudio": audio_args,
+            }
+        elif config.embed_metadata:
+            postprocessors.append({
+                "key": "FFmpegMetadata",
+                "add_metadata": True,
+            })
+        if postprocessors:
+            options["postprocessors"] = postprocessors
+
     return options
 
 
@@ -451,8 +453,8 @@ def _cleanup_embed_thumbnails(
     targets: list[Path] = []
     for pattern in ("*.jpg", "*.jpeg", "*.webp", "*.png"):
         targets += list(output_dir.glob(pattern))
-    if output_dir != config.download_dir:
-        targets += list(config.download_dir.glob(pattern))
+        if output_dir != config.download_dir:
+            targets += list(config.download_dir.glob(pattern))
     for target in targets:
         try:
             target.unlink()
@@ -567,37 +569,37 @@ def download(
                 mode,
                 config,
             )
-            download_options = _build_options(
-                config,
-                mode,
-                output_template,
-                playlist_item=playlist_item,
-            )
-            with yt_dlp.YoutubeDL(download_options) as download_ydl:
-                try:
-                    result = download_ydl.process_ie_result(
-                        info,
-                        download=True,
-                    )
-                except EntryNotInPlaylist:
-                    logger.info("すべて取得済みです。")
-                    return
-                if result is None:
-                    logger.warning(
-                        "ダウンロード対象がありませんでした。"
-                    )
-                else:
-                    logger.info("ダウンロード処理が完了しました。")
-                if mode == "audio" and config.record_audio_hash:
-                    for filepath in _requested_audio_paths(info):
-                        try:
-                            _record_audio_stream_hash(filepath, config)
-                        except Exception as exc:
-                            logger.warning(
-                                "音声ストリームハッシュの記録に失敗しました: %s: %s",
-                                filepath,
-                                exc,
-                            )
+        download_options = _build_options(
+            config,
+            mode,
+            output_template,
+            playlist_item=playlist_item,
+        )
+        with yt_dlp.YoutubeDL(download_options) as download_ydl:
+            try:
+                result = download_ydl.process_ie_result(
+                    info,
+                    download=True,
+                )
+            except EntryNotInPlaylist:
+                logger.info("すべて取得済みです。")
+                return
+            if result is None:
+                logger.warning(
+                    "ダウンロード対象がありませんでした。"
+                )
+            else:
+                logger.info("ダウンロード処理が完了しました。")
+            if mode == "audio" and config.record_audio_hash:
+                for filepath in _requested_audio_paths(info):
+                    try:
+                        _record_audio_stream_hash(filepath, config)
+                    except Exception as exc:
+                        logger.warning(
+                            "音声ストリームハッシュの記録に失敗しました: %s: %s",
+                            filepath,
+                            exc,
+                        )
         _cleanup_embed_thumbnails(config, output_template, mode)
     except Exception as exc:
         if "HTTP Error 403" in str(exc):
