@@ -22,6 +22,10 @@ class Config:
     thumbnails: bool
     embed_metadata: bool
     cookies: Path | None
+    embed_album_art: bool = True
+    audio_bitrate: int = 256
+    audio_bit_depth: int | None = None
+    audio_sample_rate: int | None = None
 
 
 def _resolve_path(value: str | Path, base_dir: Path) -> Path:
@@ -61,46 +65,53 @@ def load_config(
                     "シングルクォートで囲んでください。"
                 )
             raise ValueError(
-                f"設定ファイルのTOML形式が不正です: {config_path}\n{message}"
+                f"設定ファイルのTOML形式が不正です:{config_path}\n{message}"
             ) from exc
-        if not isinstance(data, dict):
-            raise ValueError("設定ファイルの形式が不正です。")
-        base_dir = config_path.parent
-        logger.info("設定ファイルを読み込みました: %s", config_path)
     else:
+        logger.info(
+            "設定ファイルが見つかりません。既定値を使用します: %s",
+            config_path,
+        )
         data = {}
-        base_dir = app_dir
-        logger.info("設定ファイルがないため既定値を使用します。")
-
-    default_mode = data.get("default_mode", "video")
-    if default_mode not in ("video", "audio"):
+    base_dir = config_path.parent
+    download_dir = _resolve_path(data.get("download_dir", "downloads"), base_dir)
+    archive_file = _resolve_path(data.get("archive_file", "archive.txt"), base_dir)
+    log_dir = _resolve_path(data.get("log_dir", "logs"), base_dir)
+    default_mode = str(data.get("default_mode", "video"))
+    if default_mode not in {"video", "audio"}:
         raise ValueError("default_mode は video または audio にしてください。")
-    audio_format = data.get("audio_format", "mp3")
-    if audio_format not in ("mp3", "original"):
+    audio_format = str(data.get("audio_format", "mp3"))
+    if audio_format not in {"mp3", "original"}:
         raise ValueError("audio_format は mp3 または original にしてください。")
-    download_dir = _resolve_path(
-        data.get("download_dir", "downloads"),
-        base_dir,
-    )
-    archive_file = _resolve_path(
-        data.get("archive_file", "archive.txt"),
-        base_dir,
-    )
-    log_dir = _resolve_path(
-        data.get("log_dir", "logs"),
-        base_dir,
-    )
-    ffmpeg_location = _resolve_path(
-        data.get("ffmpeg_location", "ffmpeg"),
-        base_dir,
-    )
-    cookies_value = data.get("cookies")
+    ffmpeg_location = _resolve_path(data.get("ffmpeg_location", "ffmpeg"), app_dir)
+    embed_album_art = _get_bool(data, "embed_album_art", True)
+    audio_bitrate = data.get("audio_bitrate", 256)
+    if (
+        isinstance(audio_bitrate, bool)
+        or not isinstance(audio_bitrate, int)
+        or audio_bitrate <= 0
+    ):
+        raise ValueError("audio_bitrate は正の整数で指定してください。")
+    audio_bit_depth = data.get("audio_bit_depth")
+    if audio_bit_depth is not None and (
+        isinstance(audio_bit_depth, bool)
+        or not isinstance(audio_bit_depth, int)
+        or audio_bit_depth not in (16, 24, 32)
+    ):
+        raise ValueError(
+            "audio_bit_depth は 16、24、32 のいずれかで指定してください。"
+        )
+    audio_sample_rate = data.get("audio_sample_rate")
+    if audio_sample_rate is not None and (
+        isinstance(audio_sample_rate, bool)
+        or not isinstance(audio_sample_rate, int)
+        or audio_sample_rate <= 0
+    ):
+        raise ValueError("audio_sample_rate は正の整数で指定してください。")
+    cookies_value = data.get("cookies", "")
     cookies = (
-        _resolve_path(cookies_value, base_dir)
-        if cookies_value
-        else None
+        _resolve_path(cookies_value, base_dir) if cookies_value else None
     )
-
     return Config(
         download_dir=download_dir,
         archive_file=archive_file,
@@ -113,4 +124,8 @@ def load_config(
         thumbnails=_get_bool(data, "thumbnails", False),
         embed_metadata=_get_bool(data, "embed_metadata", False),
         cookies=cookies,
+        embed_album_art=embed_album_art,
+        audio_bitrate=audio_bitrate,
+        audio_bit_depth=audio_bit_depth,
+        audio_sample_rate=audio_sample_rate,
     )
