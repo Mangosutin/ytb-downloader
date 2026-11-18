@@ -416,18 +416,18 @@ def _build_options(
                     "key": "FFmpegMetadata",
                     "add_metadata": True,
                 })
-        audio_args: list[str] = []
-        if config.audio_sample_rate is not None:
-            audio_args += ["-ar", str(config.audio_sample_rate)]
-        if config.audio_bit_depth is not None:
-            audio_args += [
-                "-sample_fmt",
-                _SAMPLE_FORMATS[config.audio_bit_depth],
-            ]
-        if audio_args:
-            options["postprocessor_args"] = {
-                "FFmpegExtractAudio": audio_args,
-            }
+            audio_args: list[str] = []
+            if config.audio_sample_rate is not None:
+                audio_args += ["-ar", str(config.audio_sample_rate)]
+            if config.audio_bit_depth is not None:
+                audio_args += [
+                    "-sample_fmt",
+                    _SAMPLE_FORMATS[config.audio_bit_depth],
+                ]
+            if audio_args:
+                options["postprocessor_args"] = {
+                    "FFmpegExtractAudio": audio_args,
+                }
         elif config.embed_metadata:
             postprocessors.append({
                 "key": "FFmpegMetadata",
