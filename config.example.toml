@@ -33,7 +33,7 @@ ffmpeg_location = "ffmpeg"
 
 
 # YouTubeへの接続でIPv4を強制する
-# IPv4に固定する (全ての403を解消するものではない)
+# IPv4に固定する（全ての403を解消するものではない）
 force_ipv4 = true
 
 
