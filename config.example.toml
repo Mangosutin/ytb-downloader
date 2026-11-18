@@ -1,23 +1,29 @@
-# YTB downloader v0.1.5 設定ファイル
+# YTB downloader v0.1.6 設定ファイル
+
 
 # ダウンロード先
 # 相対パスは設定ファイルの配置場所を基準にする
 download_dir = "downloads"
 
+
 # 重複防止用のyt-dlp download archive
 archive_file = "archive.txt"
 
+
 # ログ保存先
 log_dir = "logs"
+
 
 # 既定のダウンロードモード
 # "video" または "audio"
 default_mode = "video"
 
+
 # 音声保存形式
 # "mp3"    : MP3に変換
 # "original" : 元の音声形式のまま保存
 audio_format = "mp3"
+
 
 # ffmpegの配置先
 # フォルダまたは実行ファイルを指定できる
@@ -25,18 +31,42 @@ audio_format = "mp3"
 # Windowsの絶対パスを指定する場合は、TOMLのリテラル文字列を使う: 'E:\app\ffmpeg'
 ffmpeg_location = "ffmpeg"
 
+
 # YouTubeへの接続でIPv4を強制する
 # IPv4に固定する（全ての403を解消するものではない）
 force_ipv4 = true
 
+
 # 字幕を保存する
 subtitles = false
+
 
 # サムネイルを保存する
 thumbnails = false
 
+
 # メタデータを埋め込む
 embed_metadata = false
+
+
+# サムネイルをアルバムアートとしてMP3へ埋め込む
+# 音声モードでのみ有効。既定は true
+embed_album_art = true
+
+
+# MP3変換時のビットレート（kbps）
+audio_bitrate = 256
+
+
+# 音声の量子化ビット数
+# 16 / 24 / 32 を指定できる。未指定は元のまま
+# audio_bit_depth = 24
+
+
+# 音声のサンプリング周波数（Hz）
+# 未指定は元のまま
+# audio_sample_rate = 48000
+
 
 # Cookieファイルのパス
 # v0.1.0では未使用
