@@ -57,6 +57,7 @@ class FakeYoutubeDL:
     extract_info_results: list = []
     extract_urls: list[str] = []
     process_infos: list = []
+    processed_entry_ids: list[str] = []
     process_result: object = {}
     process_error: Exception | None = None
 
@@ -79,6 +80,10 @@ class FakeYoutubeDL:
 
     def process_ie_result(self, info, download=True):
         type(self).process_infos.append(info)
+        # Process all entries, ignoring playlist_items (like real yt-dlp).
+        for entry in info.get("entries") or []:
+            if isinstance(entry, dict) and entry.get("id"):
+                type(self).processed_entry_ids.append(entry["id"])
         if type(self).process_error is not None:
             raise type(self).process_error
         return type(self).process_result
@@ -90,6 +95,7 @@ def _reset_fake(monkeypatch):
     FakeYoutubeDL.extract_info_results = []
     FakeYoutubeDL.extract_urls = []
     FakeYoutubeDL.process_infos = []
+    FakeYoutubeDL.processed_entry_ids = []
     FakeYoutubeDL.process_result = {}
     FakeYoutubeDL.process_error = None
     monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYoutubeDL)
@@ -209,8 +215,10 @@ def test_index_url_downloads_only_selected_item(tmp_path: Path) -> None:
     )
 
     assert len(FakeYoutubeDL.instances) == 2
-    assert "playlist_items" not in FakeYoutubeDL.instances[0].options
+    assert FakeYoutubeDL.instances[0].options["playlist_items"] == "2"
     assert FakeYoutubeDL.instances[1].options["playlist_items"] == "2"
+    assert FakeYoutubeDL.process_infos[0]["entries"] == [entries[1]]
+    assert FakeYoutubeDL.processed_entry_ids == ["bbb222"]
 
 
 def test_url_without_index_downloads_whole_playlist(tmp_path: Path) -> None:
