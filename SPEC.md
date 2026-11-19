@@ -67,7 +67,8 @@
 - `EntryNotInPlaylist` は全件取得済みとして正常終了する。
 - watch?v=...&list=...&index=N 形式の URL は、その index（1始まり）の1曲だけをダウンロードする（yt-dlp の `playlist_items` を使用）。
 - index が不正・範囲外の場合は警告を記録し、v の単体動画としてダウンロードする。
-- index のない watch URL と playlist URL は従来どおりプレイリスト全体をダウンロードする。
+- `music.youtube.com` の watch URL（`v` と `list` を含む）は、index の有無にかかわらず `v` の単体動画として1曲だけをダウンロードする（YouTube Music の曲ID&listID 形式）。
+- 上記以外の index のない watch URL と playlist URL は従来どおりプレイリスト全体をダウンロードする。
 
 ## 音声設定（v0.1.6）
 - 音声モードでは、既定で動画のサムネイルをアルバムアートとして MP3 へ埋め込む（`embed_album_art`、既定 true）。

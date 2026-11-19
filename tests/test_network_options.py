@@ -47,6 +47,7 @@ def _run_download_with_fake_yt_dlp(
             assert url == "https://example.test/video"
             assert download is False
             self.extracted = True
+            assert "download_archive" not in self.params
             # Network and format options must already be in place at extraction.
             assert self.params.get("format") == "bestaudio/best"
             assert "postprocessors" in self.params
@@ -60,7 +61,8 @@ def _run_download_with_fake_yt_dlp(
         def process_ie_result(
             self, info: dict[str, Any], download: bool = False
         ) -> dict[str, Any]:
-            assert self.extracted is True
+            assert self.extracted is False
+            assert "download_archive" in self.params
             assert download is True
             output_template = Path(self.params["outtmpl"]["default"])
             assert output_template.parent.name == "Test playlist"
@@ -94,10 +96,15 @@ def test_download_uses_ipv4_for_metadata_and_media(
 ) -> None:
     options, sessions = _run_download_with_fake_yt_dlp(monkeypatch, tmp_path)
 
-    assert len(options) == 1
-    assert len(sessions) == 1
-    assert options[0]["source_address"] == "0.0.0.0"
-    assert options[0]["format"] == "bestaudio/best"
+    assert len(options) == 2
+    assert len(sessions) == 2
+    extraction_options, download_options = options
+    assert extraction_options["source_address"] == "0.0.0.0"
+    assert download_options["source_address"] == "0.0.0.0"
+    assert extraction_options["format"] == "bestaudio/best"
+    assert download_options["format"] == "bestaudio/best"
+    assert "download_archive" not in extraction_options
+    assert "download_archive" in download_options
 
 
 def test_download_can_disable_ipv4(
@@ -110,6 +117,7 @@ def test_download_can_disable_ipv4(
     class FakeYoutubeDL:
         def __init__(self, options: dict[str, Any]) -> None:
             self.params = options
+            self.extracted = False
             captured_options.append(options)
 
         def __enter__(self) -> "FakeYoutubeDL":
@@ -119,19 +127,23 @@ def test_download_can_disable_ipv4(
             return False
 
         def extract_info(self, url: str, download: bool = False) -> dict[str, Any]:
+            self.extracted = True
+            assert "download_archive" not in self.params
             return {"id": "abc123", "title": "Test video"}
 
         def process_ie_result(
             self, info: dict[str, Any], download: bool = False
         ) -> dict[str, Any]:
+            assert self.extracted is False
+            assert "download_archive" in self.params
             return info
 
     monkeypatch.setattr(core.yt_dlp, "YoutubeDL", FakeYoutubeDL)
     config = load_config(config_file, app_dir=tmp_path)
     core.download("https://example.test/video", "audio", config)
 
-    assert len(captured_options) == 1
-    assert "source_address" not in captured_options[0]
+    assert len(captured_options) == 2
+    assert all("source_address"  not in options for options in captured_options)
 
 
 def test_http_403_logs_ipv4_diagnostic(

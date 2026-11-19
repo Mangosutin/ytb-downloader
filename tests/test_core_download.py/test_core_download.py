@@ -57,6 +57,7 @@ class FakeYoutubeDL:
     extract_info_results: list = []
     extract_urls: list[str] = []
     process_infos: list = []
+    processed_entry_ids: list[str] = []
     process_result: object = {}
     process_error: Exception | None = None
 
@@ -79,6 +80,10 @@ class FakeYoutubeDL:
 
     def process_ie_result(self, info, download=True):
         type(self).process_infos.append(info)
+        # Process all entries, ignoring playlist_items (like real yt-dlp).
+        for entry in info.get("entries") or []:
+            if isinstance(entry, dict) and entry.get("id"):
+                type(self).processed_entry_ids.append(entry["id"])
         if type(self).process_error is not None:
             raise type(self).process_error
         return type(self).process_result
@@ -90,6 +95,7 @@ def _reset_fake(monkeypatch):
     FakeYoutubeDL.extract_info_results = []
     FakeYoutubeDL.extract_urls = []
     FakeYoutubeDL.process_infos = []
+    FakeYoutubeDL.processed_entry_ids = []
     FakeYoutubeDL.process_result = {}
     FakeYoutubeDL.process_error = None
     monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYoutubeDL)
@@ -209,8 +215,10 @@ def test_index_url_downloads_only_selected_item(tmp_path: Path) -> None:
     )
 
     assert len(FakeYoutubeDL.instances) == 2
-    assert "playlist_items" not in FakeYoutubeDL.instances[0].options
+    assert FakeYoutubeDL.instances[0].options["playlist_items"] == "2"
     assert FakeYoutubeDL.instances[1].options["playlist_items"] == "2"
+    assert FakeYoutubeDL.process_infos[0]["entries"] == [entries[1]]
+    assert FakeYoutubeDL.processed_entry_ids == ["bbb222"]
 
 
 def test_url_without_index_downloads_whole_playlist(tmp_path: Path) -> None:
@@ -228,6 +236,77 @@ def test_url_without_index_downloads_whole_playlist(tmp_path: Path) -> None:
     )
 
     assert len(FakeYoutubeDL.instances) == 2
+    assert "playlist_items" not in FakeYoutubeDL.instances[1].options
+
+
+@pytest.mark.parametrize(
+    "list_id",
+    [
+        "RDAMVMNxxjLD2pmlk",  # YouTube Music のラジオ/ミックス
+        "PLM1t88YmeLxs",  # 通常のプレイリストIDでも同様に扱う
+    ],
+)
+def test_youtube_music_watch_downloads_only_v(
+    tmp_path: Path,
+    list_id: str,
+) -> None:
+    config = _config(tmp_path)
+    info = _entry("XMY0L-mQxvw", "Moments", "テスト歌手")
+    FakeYoutubeDL.extract_info_results = [info]
+
+    download(
+        f"https://music.youtube.com/watch?v=XMY0L-mQxvw&list={list_id}",
+        "audio",
+        config,
+    )
+
+    assert FakeYoutubeDL.extract_urls == [
+        "https://music.youtube.com/watch?v=XMY0L-mQxvw",
+    ]
+    assert len(FakeYoutubeDL.instances) == 2
+    assert "playlist_items" not in FakeYoutubeDL.instances[0].options
+    assert "playlist_items" not in FakeYoutubeDL.instances[1].options
+    assert FakeYoutubeDL.process_infos[0]["id"] == "XMY0L-mQxvw"
+    assert "entries" not in FakeYoutubeDL.process_infos[0]
+
+
+def test_youtube_music_watch_with_index_downloads_v(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    info = _entry("XMY0L-mQxvw", "Moments", "テスト歌手")
+    FakeYoutubeDL.extract_info_results = [info]
+
+    download(
+        "https://music.youtube.com/watch?v=XMY0L-mQxvw"
+        "&list=RDAMVMNxxjLD2pmlk&index=3",
+        "audio",
+        config,
+    )
+
+    assert FakeYoutubeDL.extract_urls == [
+        "https://music.youtube.com/watch?v=XMY0L-mQxvw",
+    ]
+    assert "playlist_items" not in FakeYoutubeDL.instances[1].options
+
+
+def test_youtube_music_playlist_url_downloads_whole_playlist(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    info = _playlist_info(
+        "テストプレイリスト",
+        [_entry("aaa111", "テスト曲1", "テスト歌手1")],
+    )
+    FakeYoutubeDL.extract_info_results = [info]
+
+    download(
+        "https://music.youtube.com/playlist?list=RDAMVMNxxjLD2pmlk",
+        "audio",
+        config,
+    )
+
+    assert FakeYoutubeDL.extract_urls == [
+        "https://music.youtube.com/playlist?list=RDAMVMNxxjLD2pmlk",
+    ]
     assert "playlist_items" not in FakeYoutubeDL.instances[1].options
 
 

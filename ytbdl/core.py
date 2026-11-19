@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import ParseResult, parse_qsl, urlencode, urlparse, urlunparse
 
 import yt_dlp
 from yt_dlp.utils import EntryNotInPlaylist
@@ -117,18 +117,36 @@ def _single_video_url(url: str) -> str:
     return urlunparse(parsed._replace(query=urlencode(query)))
 
 
-def _resolve_playlist_item_selection(url: str) -> tuple[str | None, str]:
-    """index 付きプレイリスト URL の対象曲を判定する。
+def _is_youtube_music_watch_url(parsed: ParseResult) -> bool:
+    """YouTube Music の watch URL かどうかを判定する。"""
+    hostname = (parsed.hostname or "").lower()
+    is_music_host = hostname == "music.youtube.com" or hostname.endswith(
+        ".music.youtube.com"
+    )
+    return is_music_host and parsed.path.rstrip("/").endswith("/watch")
 
-    list と index の両方がある場合、その index（1始まり）の1曲だけを
-    ダウンロード対象とする。index が不正な場合は警告を出して
-    v の単体動画 URL へフォールバックする。
+
+def _resolve_playlist_item_selection(url: str) -> tuple[str | None, str]:
+    """プレイリスト URL からダウンロード対象を判定する。
+
+    - YouTube Music の watch URL は、list/index の有無にかかわらず
+      v で指定された1曲だけをダウンロードする。
+    - それ以外で list と index の両方がある場合は、その index（1始まり）の
+      1曲だけをダウンロード対象とする。index が不正な場合は警告を出して
+      v の単体動画 URL へフォールバックする。
+    - 上記以外は URL を変更せず、プレイリスト全体を対象とする。
     """
     parsed = urlparse(url)
     query = parse_qsl(parsed.query)
     values = dict(query)
     if not values.get("v") or not values.get("list"):
         return None, url
+    if _is_youtube_music_watch_url(parsed):
+        logger.info(
+            "YouTube Music の視聴URLが指定されたため、"
+            "v で指定された1曲のみダウンロードします。"
+        )
+        return None, _single_video_url(url)
     index_values = [value for key, value in query if key == "index"]
     if not index_values:
         return None, url
@@ -493,8 +511,9 @@ def download(
     if mode == "audio":
         logger.info("音声形式: %s", config.audio_format)
     try:
-        # index 付きプレイリスト URL の対象曲を判定する。
-        # 不正な index はここで単体動画 URL へフォールバックする。
+        # index 付きプレイリスト URL と YouTube Music の watch URL の
+        # 対象曲を判定する。不正な index はここで単体動画 URL へ
+        # フォールバックする。
         playlist_item, download_url = _resolve_playlist_item_selection(url)
         placeholder_template = str(
             config.download_dir / "%(title)s.%(ext)s"
@@ -503,6 +522,7 @@ def download(
             config,
             mode,
             placeholder_template,
+            playlist_item=playlist_item,
             extraction_only=True,
         )
         with yt_dlp.YoutubeDL(extraction_options) as extract_ydl:
@@ -543,6 +563,8 @@ def download(
                     )
                     playlist_item = None
                     download_url = _single_video_url(url)
+                    extraction_options.pop("playlist_items", None)
+                    extract_ydl.params.pop("playlist_items", None)
                     info = extract_ydl.extract_info(
                         download_url,
                         download=False,
@@ -557,13 +579,18 @@ def download(
                             "動画情報を取得できませんでした。"
                         )
                     _prepare_entries(info, mode, config)
-                elif entries and index_number <= len(entries):
-                    selected = entries[index_number - 1]
+                elif entries:
+                    selected = entries[0] if len(entries) == 1 else  entries[index_number - 1] if index_number <= len(entries) else None
                     if isinstance(selected, dict) and _archive_contains(
                         config, selected.get("id")
                     ):
                         logger.info("すべて取得済みです。")
                         return
+                    # Narrow to the selected entry.
+                    if selected is not None:
+                        selected_info = dict(info)
+                        selected_info["entries"] = [selected]
+                        info = selected_info
             output_template = _build_output_template(
                 info,
                 mode,
