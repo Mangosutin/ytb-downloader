@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import logging
+import re
+from pathlib import Path
 from typing import Any
+from urllib.parse import ParseResult, parse_qsl, urlencode, urlparse, urlunparse
 
 import yt_dlp
+from yt_dlp.utils import EntryNotInPlaylist
 
 from ytbdl.config import Config
 from ytbdl.naming import (
@@ -12,6 +16,10 @@ from ytbdl.naming import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ffmpeg の -sample_fmt に渡すサンプル形式。24 bit は
+# ffmpeg の PCM 変換で 32 bit 扱いになるため s32p を使う。
+_SAMPLE_FORMATS = {16: "s16p", 24: "s32p", 32: "s32p"}
 
 
 def _network_options(config: Config) -> dict[str, str]:
@@ -70,6 +78,93 @@ def _get_ffmpeg_location(config: Config) -> str | None:
     return str(path)
 
 
+def _video_id_from_url(url: str) -> str | None:
+    """URL から動画 ID を取り出す。"""
+    match = re.search(r"[?&]v=([^&#]+)", url)
+    if match:
+        return match.group(1)
+    parsed = urlparse(url)
+    if parsed.netloc.endswith("youtu.be"):
+        video_id = parsed.path.strip("/")
+        return video_id or None
+    return None
+
+
+def _archive_contains(config: Config, video_id: str | None) -> bool:
+    """download archive に動画 ID が記録済みかを確認する。"""
+    if not video_id:
+        return False
+    archive_file = config.archive_file
+    if not archive_file.is_file():
+        return False
+    try:
+        text = archive_file.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    pattern = re.compile(rf"^youtube {re.escape(video_id)}$", re.M)
+    return pattern.search(text) is not None
+
+
+def _single_video_url(url: str) -> str:
+    """list と index を除いた単体動画 URL を作る。"""
+    parsed = urlparse(url)
+    query = dict(parse_qsl(parsed.query))
+    query.pop("list", None)
+    query.pop("index", None)
+    return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def _is_youtube_music_watch_url(parsed: ParseResult) -> bool:
+    """YouTube Music の watch URL かどうかを判定する。"""
+    hostname = (parsed.hostname or "").lower()
+    is_music_host = hostname == "music.youtube.com" or hostname.endswith(
+        ".music.youtube.com"
+    )
+    return is_music_host and parsed.path.rstrip("/").endswith("/watch")
+
+
+def _resolve_playlist_item_selection(url: str) -> tuple[str | None, str]:
+    """プレイリスト URL からダウンロード対象を判定する。
+
+    - YouTube Music の watch URL は、list/index の有無にかかわらず
+      v で指定された1曲だけをダウンロードする。
+    - それ以外で list と index の両方がある場合は、その index（1始まり）の
+      1曲だけをダウンロード対象とする。index が不正な場合は警告を出して
+      v の単体動画 URL へフォールバックする。
+    - 上記以外は URL を変更せず、プレイリスト全体を対象とする。
+    """
+    parsed = urlparse(url)
+    query = parse_qsl(parsed.query)
+    values = dict(query)
+    if not values.get("v") or not values.get("list"):
+        return None, url
+    if _is_youtube_music_watch_url(parsed):
+        logger.info(
+            "YouTube Music の視聴URLが指定されたため、"
+            "v で指定された1曲のみダウンロードします。"
+        )
+        return None, _single_video_url(url)
+    index_values = [value for key, value in query if key == "index"]
+    if not index_values:
+        return None, url
+    if len(index_values) != 1:
+        logger.warning(
+            "プレイリストの index が複数指定されています: %s。"
+            "単体動画としてダウンロードします。",
+            ",".join(index_values),
+        )
+        return None, _single_video_url(url)
+    index = index_values[0]
+    if not index.isdigit() or int(index) < 1:
+        logger.warning(
+            "プレイリストの index が不正です: %s。"
+            "単体動画としてダウンロードします。",
+            index,
+        )
+        return None, _single_video_url(url)
+    return index, url
+
+
 def _prepare_entry(
     entry: dict[str, Any],
     mode: str,
@@ -93,12 +188,19 @@ def _prepare_entries(
     config: Config,
 ) -> None:
     entries = info.get("entries")
-    if entries:
-        for entry in entries:
+    if entries is not None:
+        # entries は遅延評価の PlaylistEntries の可能性があるため、
+        # list 化して実体化してから各 entry に命名を適用する。
+        materialized = list(entries)
+        info["entries"] = materialized
+        for entry in materialized:
             if isinstance(entry, dict):
                 _prepare_entry(entry, mode, config)
-    else:
-        _prepare_entry(info, mode, config)
+        return
+    # プレイリスト本体には音声命名を適用しない。
+    if info.get("_type") in ("playlist", "multi_video"):
+        return
+    _prepare_entry(info, mode, config)
 
 
 def _build_output_template(
@@ -129,12 +231,13 @@ def _build_options(
     config: Config,
     mode: str,
     output_template: str,
+    playlist_item: str | None = None,
+    extraction_only: bool = False,
 ) -> dict[str, Any]:
     options: dict[str, Any] = {
         "outtmpl": {
             "default": output_template,
         },
-        "download_archive": str(config.archive_file),
         "noplaylist": False,
         "logger": YTDLPLogger(),
         "progress_hooks": [_progress_hook],
@@ -149,6 +252,12 @@ def _build_options(
         "writethumbnail": config.thumbnails,
         **_network_options(config),
     }
+    if not extraction_only:
+        # download_archive はダウンロード用のインスタンスでのみ有効化する。
+        # 抽出時に含めると、アーカイブ済みエントリが抽出段階で除外される。
+        options["download_archive"] = str(config.archive_file)
+    if playlist_item is not None:
+        options["playlist_items"] = playlist_item
     ffmpeg_location = _get_ffmpeg_location(config)
     if ffmpeg_location:
         options["ffmpeg_location"] = ffmpeg_location
@@ -159,19 +268,69 @@ def _build_options(
         })
     elif mode == "audio":
         options["format"] = "bestaudio/best"
+        postprocessors: list[dict[str, Any]] = []
         if config.audio_format == "mp3":
-            options["postprocessors"] = [{
+            postprocessors.append({
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
-                "preferredquality": "0",
-            }]
-        if config.embed_metadata:
-            options.setdefault("postprocessors", []).append({
+                "preferredquality": str(config.audio_bitrate),
+            })
+            if config.embed_album_art:
+                # アルバムアート埋め込みにはサムネイル取得が必要。
+                options["writethumbnail"] = True
+                postprocessors.append({"key": "EmbedThumbnail"})
+            if config.embed_metadata:
+                postprocessors.append({
+                    "key": "FFmpegMetadata",
+                    "add_metadata": True,
+                })
+            audio_args: list[str] = []
+            if config.audio_sample_rate is not None:
+                audio_args += ["-ar", str(config.audio_sample_rate)]
+            if config.audio_bit_depth is not None:
+                audio_args += [
+                    "-sample_fmt",
+                    _SAMPLE_FORMATS[config.audio_bit_depth],
+                ]
+            if audio_args:
+                options["postprocessor_args"] = {
+                    "FFmpegExtractAudio": audio_args,
+                }
+        elif config.embed_metadata:
+            postprocessors.append({
                 "key": "FFmpegMetadata",
                 "add_metadata": True,
             })
+        if postprocessors:
+            options["postprocessors"] = postprocessors
 
     return options
+
+
+def _cleanup_embed_thumbnails(
+    config: Config,
+    output_template: str,
+    mode: str,
+) -> None:
+    """埋め込み用の一時サムネイルを削除する。"""
+    if mode != "audio":
+        return
+    if not config.embed_album_art or config.thumbnails:
+        return
+    output_dir = Path(output_template).parent
+    targets: list[Path] = []
+    for pattern in ("*.jpg", "*.jpeg", "*.webp", "*.png"):
+        targets += list(output_dir.glob(pattern))
+        if output_dir != config.download_dir:
+            targets += list(config.download_dir.glob(pattern))
+    for target in targets:
+        try:
+            target.unlink()
+        except OSError:
+            logger.debug(
+                "サムネイルの削除に失敗しました: %s",
+                target,
+            )
 
 
 def download(
@@ -202,24 +361,29 @@ def download(
     if mode == "audio":
         logger.info("音声形式: %s", config.audio_format)
     try:
-        # Configure the complete yt-dlp behavior before extraction.
-        # Keep extraction and media transfer in the same YoutubeDL instance so
-        # extractor state, request context, cookies, and format decisions are
-        # preserved between the two phases.
+        # index 付きプレイリスト URL と YouTube Music の watch URL の
+        # 対象曲を判定する。不正な index はここで単体動画 URL へ
+        # フォールバックする。
+        playlist_item, download_url = _resolve_playlist_item_selection(url)
         placeholder_template = str(
             config.download_dir / "%(title)s.%(ext)s"
         )
-        options = _build_options(
+        extraction_options = _build_options(
             config,
             mode,
             placeholder_template,
+            playlist_item=playlist_item,
+            extraction_only=True,
         )
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(
-                url,
+        with yt_dlp.YoutubeDL(extraction_options) as extract_ydl:
+            info = extract_ydl.extract_info(
+                download_url,
                 download=False,
             )
             if not info:
+                if _archive_contains(config, _video_id_from_url(download_url)):
+                    logger.info("すべて取得済みです。")
+                    return
                 raise RuntimeError(
                     "動画情報を取得できませんでした。"
                 )
@@ -228,25 +392,82 @@ def download(
                     "チャンネル全動画の一括ダウンロードには対応していません。"
                 )
             _prepare_entries(info, mode, config)
+            if info.get("_type") in ("playlist", "multi_video") and not info.get(
+                "entries"
+            ):
+                logger.info("すべて取得済みです。")
+                return
+            if playlist_item is not None and info.get("_type") in (
+                "playlist",
+                "multi_video",
+            ):
+                entries = info.get("entries") or []
+                total = info.get("playlist_count") or len(entries)
+                index_number = int(playlist_item)
+                if total and index_number > total:
+                    logger.warning(
+                        "プレイリストの index が範囲外です: %s（全%s件）。"
+                        "単体動画としてダウンロードします。",
+                        playlist_item,
+                        total,
+                    )
+                    playlist_item = None
+                    download_url = _single_video_url(url)
+                    extraction_options.pop("playlist_items", None)
+                    extract_ydl.params.pop("playlist_items", None)
+                    info = extract_ydl.extract_info(
+                        download_url,
+                        download=False,
+                    )
+                    if not info:
+                        if _archive_contains(
+                            config, _video_id_from_url(download_url)
+                        ):
+                            logger.info("すべて取得済みです。")
+                            return
+                        raise RuntimeError(
+                            "動画情報を取得できませんでした。"
+                        )
+                    _prepare_entries(info, mode, config)
+                elif entries:
+                    selected = entries[0] if len(entries) == 1 else  entries[index_number - 1] if index_number <= len(entries) else None
+                    if isinstance(selected, dict) and _archive_contains(
+                        config, selected.get("id")
+                    ):
+                        logger.info("すべて取得済みです。")
+                        return
+                    # Narrow to the selected entry.
+                    if selected is not None:
+                        selected_info = dict(info)
+                        selected_info["entries"] = [selected]
+                        info = selected_info
             output_template = _build_output_template(
                 info,
                 mode,
                 config,
             )
-            # Output location depends on whether the URL resolved to a
-            # playlist. All other yt-dlp options are fixed before extraction.
-            ydl.params["outtmpl"] = {"default": output_template}
-            result = ydl.process_ie_result(
-                info,
-                download=True,
-            )
-
+        download_options = _build_options(
+            config,
+            mode,
+            output_template,
+            playlist_item=playlist_item,
+        )
+        with yt_dlp.YoutubeDL(download_options) as download_ydl:
+            try:
+                result = download_ydl.process_ie_result(
+                    info,
+                    download=True,
+                )
+            except EntryNotInPlaylist:
+                logger.info("すべて取得済みです。")
+                return
             if result is None:
                 logger.warning(
                     "ダウンロード対象がありませんでした。"
                 )
             else:
                 logger.info("ダウンロード処理が完了しました。")
+        _cleanup_embed_thumbnails(config, output_template, mode)
     except Exception as exc:
         if "HTTP Error 403" in str(exc):
             logger.error(
