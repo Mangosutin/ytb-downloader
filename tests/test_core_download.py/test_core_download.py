@@ -239,6 +239,77 @@ def test_url_without_index_downloads_whole_playlist(tmp_path: Path) -> None:
     assert "playlist_items" not in FakeYoutubeDL.instances[1].options
 
 
+@pytest.mark.parametrize(
+    "list_id",
+    [
+        "RDAMVMNxxjLD2pmlk",  # YouTube Music のラジオ/ミックス
+        "PLM1t88YmeLxs",  # 通常のプレイリストIDでも同様に扱う
+    ],
+)
+def test_youtube_music_watch_downloads_only_v(
+    tmp_path: Path,
+    list_id: str,
+) -> None:
+    config = _config(tmp_path)
+    info = _entry("XMY0L-mQxvw", "Moments", "テスト歌手")
+    FakeYoutubeDL.extract_info_results = [info]
+
+    download(
+        f"https://music.youtube.com/watch?v=XMY0L-mQxvw&list={list_id}",
+        "audio",
+        config,
+    )
+
+    assert FakeYoutubeDL.extract_urls == [
+        "https://music.youtube.com/watch?v=XMY0L-mQxvw",
+    ]
+    assert len(FakeYoutubeDL.instances) == 2
+    assert "playlist_items" not in FakeYoutubeDL.instances[0].options
+    assert "playlist_items" not in FakeYoutubeDL.instances[1].options
+    assert FakeYoutubeDL.process_infos[0]["id"] == "XMY0L-mQxvw"
+    assert "entries" not in FakeYoutubeDL.process_infos[0]
+
+
+def test_youtube_music_watch_with_index_downloads_v(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    info = _entry("XMY0L-mQxvw", "Moments", "テスト歌手")
+    FakeYoutubeDL.extract_info_results = [info]
+
+    download(
+        "https://music.youtube.com/watch?v=XMY0L-mQxvw"
+        "&list=RDAMVMNxxjLD2pmlk&index=3",
+        "audio",
+        config,
+    )
+
+    assert FakeYoutubeDL.extract_urls == [
+        "https://music.youtube.com/watch?v=XMY0L-mQxvw",
+    ]
+    assert "playlist_items" not in FakeYoutubeDL.instances[1].options
+
+
+def test_youtube_music_playlist_url_downloads_whole_playlist(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    info = _playlist_info(
+        "テストプレイリスト",
+        [_entry("aaa111", "テスト曲1", "テスト歌手1")],
+    )
+    FakeYoutubeDL.extract_info_results = [info]
+
+    download(
+        "https://music.youtube.com/playlist?list=RDAMVMNxxjLD2pmlk",
+        "audio",
+        config,
+    )
+
+    assert FakeYoutubeDL.extract_urls == [
+        "https://music.youtube.com/playlist?list=RDAMVMNxxjLD2pmlk",
+    ]
+    assert "playlist_items" not in FakeYoutubeDL.instances[1].options
+
+
 def test_playlist_url_ignores_index(tmp_path: Path) -> None:
     config = _config(tmp_path)
     info = _playlist_info(

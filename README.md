@@ -191,7 +191,7 @@ py run.py 'https://www.youtube.com/watch?v=VIDEO_ID&list=PLAYLIST_ID' --mode aud
 py run.py 'https://www.youtube.com/watch?v=VIDEO_ID' --config '.\config.toml'
 ```
 
-watch?v=...&list=...&index=N のように index を指定した場合は、その index（1始まり）の1曲だけをダウンロードします。index が無い場合はプレイリスト全体をダウンロードします。
+watch?v=...&list=...&index=N のように index を指定した場合は、その index（1始まり）の1曲だけをダウンロードします。index が無い場合はプレイリスト全体をダウンロードします。ただし、YouTube Music の視聴URL（music.youtube.com/watch?v=...&list=...）は index の有無にかかわらず、`v` で指定された1曲だけをダウンロードします。
 
 プレイリスト名のフォルダを作成し、その中に動画を保存します。
 単発動画はdownloads直下に保存します。
