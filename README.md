@@ -1,6 +1,6 @@
 # YTB downloader
 
-Version: 0.1.6
+Version: 0.1.7
 
 Windows / Python 3.13 向けの個人用 YouTube ダウンローダーです。
 yt-dlpをPythonライブラリとして利用し、動画・音声を指定した命名規則で保存します。
@@ -289,6 +289,42 @@ v0.1.6時点では以下に対応しません。
 - チャンネル全動画の一括ダウンロード
 - Cookie認証
 - 年齢制限・メンバー限定などCookieが必要な動画
+
+## v0.1.7 追加機能
+
+### MusicBrainz によるジャンル照合
+
+- 音声モードでは既定で MusicBrainz を照合してジャンルを取得し、取得できた場合は音声メタデータへ設定します。
+- genre_lookup = false にすると照合を無効化できます。
+- MusicBrainz の利用規約に沿い、User-Agent を送信し、リクエスト間隔を最低1秒空けます。
+
+### 音声ストリーム SHA-256
+
+- 音声モードでは既定で、変換後の音声ストリームのみから SHA-256 を計算し、AUDIO_STREAM_SHA256 メタデータへ記録します。
+- ファイル全体ではなく音声ストリームのハッシュです。
+- record_audio_hash = false にすると記録を無効化できます。
+
+### JSON リンクリスト
+
+- --linklist PATH で JSON 配列を指定できます。
+- 要素は URL 文字列、または {"url": "...", "mode": "audio"} 形式です。mode を省略した場合は CLI の --mode、次に設定ファイルの既定モードを使用します。
+- 1件の失敗後も残りを処理し、最後に件数を集計します。失敗が1件でもあれば終了コードは 1 です。
+
+### JSON 形式の例
+
+```json
+[
+  "https://www.youtube.com/watch?v=example1",
+  {
+    "url": "https://www.youtube.com/watch?v=example2",
+    "mode": "audio"
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=example3",
+    "mode": "video"
+  }
+]
+```
 
 ## 13. バージョン
 

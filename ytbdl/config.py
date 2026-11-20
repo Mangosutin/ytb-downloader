@@ -26,6 +26,8 @@ class Config:
     audio_bitrate: int = 256
     audio_bit_depth: int | None = None
     audio_sample_rate: int | None = None
+    genre_lookup: bool = True
+    record_audio_hash: bool = True
 
 
 def _resolve_path(value: str | Path, base_dir: Path) -> Path:
@@ -128,4 +130,6 @@ def load_config(
         audio_bitrate=audio_bitrate,
         audio_bit_depth=audio_bit_depth,
         audio_sample_rate=audio_sample_rate,
+        genre_lookup=_get_bool(data, "genre_lookup", True),
+        record_audio_hash=_get_bool(data, "record_audio_hash", True),
     )

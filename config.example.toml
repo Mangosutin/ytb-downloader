@@ -71,3 +71,9 @@ audio_bitrate = 256
 # Cookieファイルのパス
 # v0.1.0では未使用
 cookies = ""
+
+
+# MusicBrainz でジャンルを照合する（既定: true。false で無効化）
+genre_lookup = true
+# 音声ストリームの SHA-256 をメタデータに記録する（既定: true。false で無効化）
+record_audio_hash = true

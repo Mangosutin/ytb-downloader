@@ -76,3 +76,18 @@
 - MP3 変換の既定ビットレートは 256 kbps（`audio_bitrate`、単位 kbps）。
 - 量子化ビット数（`audio_bit_depth`: 16 / 24 / 32）とサンプリング周波数（`audio_sample_rate`: Hz）を指定できる。未指定は元のまま変換しない。
 - mp3 は非可逆形式のため、ビット深度の指定は ffmpeg の変換段階（PCM 段階／エンコード前処理）に効くものである。`audio_format` が original で変換が走らない場合は適用されない。
+
+## v0.1.7 追加仕様
+
+### MusicBrainz によるジャンル照合
+
+- genre_lookup：bool、既定 true。音声モードで MusicBrainz recording を検索し、recording → release-group → artist の順にジャンルを探索する。false で無効化可能。
+- User-Agent を付与し、リクエスト間隔を最低1秒とする。失敗は警告のみ。
+
+### 音声ストリームハッシュ
+
+- record_audio_hash：bool、既定 true。音声モードで変換完了後の音声ストリーム SHA-256 を ffmpeg streamhash で計算し、AUDIO_STREAM_SHA256 タグとして codec copy で記録する。失敗は警告のみ。
+
+### JSON リンクリスト
+
+- --linklist PATH：URL 文字列配列または {"url": "...", "mode": "audio" | "video"} 配列を読み込む。mode 省略時は CLI 指定、設定ファイル既定値の順で解決する。全件処理後に成功・スキップ・失敗件数を集計し、失敗があれば終了コード1。

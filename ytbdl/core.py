@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import ParseResult, parse_qsl, urlencode, urlparse, urlunparse
@@ -10,6 +12,7 @@ import yt_dlp
 from yt_dlp.utils import EntryNotInPlaylist
 
 from ytbdl.config import Config
+from ytbdl.musicbrainz import lookup_genre
 from ytbdl.naming import (
     build_audio_name,
     sanitize_filename,
@@ -174,6 +177,21 @@ def _prepare_entry(
         return
     naming = build_audio_name(entry)
     entry["title"] = naming["filename"]
+    if config.genre_lookup and naming["track"] and naming["artist"]:
+        try:
+            genre = lookup_genre(
+                naming["track"],
+                naming["artist"],
+            )
+        except Exception as exc:
+            logger.warning(
+                "MusicBrainz のジャンル照合に失敗しました: %s",
+                exc,
+            )
+            genre = None
+        if genre:
+            entry["genre"] = genre
+            entry["genres"] = [genre]
     if config.embed_metadata:
         entry["track"] = naming["track"]
         if naming["artist"]:
@@ -201,6 +219,138 @@ def _prepare_entries(
     if info.get("_type") in ("playlist", "multi_video"):
         return
     _prepare_entry(info, mode, config)
+
+
+_STREAMHASH_RE = re.compile(r"SHA256=([0-9a-fA-F]{64})")
+
+
+def parse_streamhash(output: str) -> str | None:
+    """ffmpeg streamhash の出力から SHA-256 を取得する。"""
+    match = _STREAMHASH_RE.search(output)
+    if not match:
+        return None
+    return match.group(1).lower()
+
+
+def _calculate_audio_stream_hash(
+    ffmpeg: str,
+    filepath: Path,
+) -> str | None:
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-v", "error",
+                "-i", str(filepath),
+                "-map", "0:a:0",
+                "-f", "streamhash",
+                "-hash", "sha256",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        logger.warning(
+            "音声ストリームハッシュの計算に失敗しました: %s: %s",
+            filepath,
+            exc,
+        )
+        return None
+    if result.returncode != 0:
+        logger.warning(
+            "音声ストリームハッシュの計算に失敗しました: %s: %s",
+            filepath,
+            result.stderr.strip(),
+        )
+        return None
+    return parse_streamhash(result.stdout)
+
+
+def _embed_audio_stream_hash(
+    ffmpeg: str,
+    filepath: Path,
+    stream_hash: str,
+) -> None:
+
+    with tempfile.NamedTemporaryFile(
+        suffix=filepath.suffix,
+        dir=filepath.parent,
+        delete=False,
+    ) as handle:
+        temporary = Path(handle.name)
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-v", "error",
+                "-i", str(filepath),
+                "-map", "0",
+                "-codec", "copy",
+                "-metadata",
+                f"AUDIO_STREAM_SHA256={stream_hash}",
+                "-y",
+                str(temporary),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "音声ストリームハッシュの埋め込みに失敗しました: %s: %s",
+                filepath,
+                result.stderr.strip(),
+            )
+            return
+        temporary.replace(filepath)
+    except OSError as exc:
+        logger.warning(
+            "音声ストリームハッシュの埋め込みに失敗しました: %s: %s",
+            filepath,
+            exc,
+        )
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _record_audio_stream_hash(
+    filepath: Path,
+    config: Config,
+) -> None:
+    ffmpeg = _get_ffmpeg_location(config)
+    if not ffmpeg:
+        return
+    if not filepath.is_file():
+        logger.warning(
+            "音声ファイルが見つからないためハッシュを記録できません: %s",
+            filepath,
+        )
+        return
+    stream_hash = _calculate_audio_stream_hash(ffmpeg, filepath)
+    if stream_hash is None:
+        return
+    _embed_audio_stream_hash(
+        ffmpeg,
+        filepath,
+        stream_hash,
+    )
+
+
+def _requested_audio_paths(info: dict[str, Any]) -> list[Path]:
+    paths: list[Path] = []
+    for item in info.get("requested_downloads") or []:
+        if not isinstance(item, dict):
+            continue
+        filepath = item.get("filepath")
+        if isinstance(filepath, str) and filepath:
+            paths.append(Path(filepath))
+    return paths
+
 
 
 def _build_output_template(
@@ -467,6 +617,16 @@ def download(
                 )
             else:
                 logger.info("ダウンロード処理が完了しました。")
+            if mode == "audio" and config.record_audio_hash:
+                for filepath in _requested_audio_paths(info):
+                    try:
+                        _record_audio_stream_hash(filepath, config)
+                    except Exception as exc:
+                        logger.warning(
+                            "音声ストリームハッシュの記録に失敗しました: %s: %s",
+                            filepath,
+                            exc,
+                        )
         _cleanup_embed_thumbnails(config, output_template, mode)
     except Exception as exc:
         if "HTTP Error 403" in str(exc):
