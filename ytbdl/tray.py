@@ -401,16 +401,36 @@ class ControlWindow:
             self._input_hwnd, 0, 8, input_y, w - 16, input_h,
             win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
         )
-        for hwnd, bx, bw in (
-            (self._stack_hwnd, 8, 84),
-            (self._run_now_hwnd, 96, 102),
-            (self._clear_hwnd, 202, 60),
-            (self._quit_hwnd, 268, 52),
-        ):
+        # ボタン幅はテキストに合わせて計測し、左から順に配置する
+        button_items = (
+            (self._stack_hwnd, "Stack/追加"),
+            (self._run_now_hwnd, "Run now/即実行"),
+            (self._clear_hwnd, "Clear/消去"),
+            (self._quit_hwnd, "Quit/終了"),
+        )
+        button_widths = []
+        for hwnd, text in button_items:
+            hdc = win32gui.GetDC(hwnd)
+            try:
+                font = win32gui.SendMessage(hwnd, win32con.WM_GETFONT, 0, 0)
+                old_font = None
+                if font:
+                    old_font = win32gui.SelectObject(hdc, font)
+                try:
+                    sz = win32gui.GetTextExtentPoint32(hdc, text)
+                    button_widths.append(sz[0] + 16)
+                finally:
+                    if old_font is not None:
+                        win32gui.SelectObject(hdc, old_font)
+            finally:
+                win32gui.ReleaseDC(hwnd, hdc)
+        bx = 8
+        for (hwnd, _), bw in zip(button_items, button_widths):
             win32gui.SetWindowPos(
                 hwnd, 0, bx, buttons_y, bw, buttons_h,
                 win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
             )
+            bx += bw + 4
         win32gui.SetWindowPos(
             self.hwnd, 0, x, y, total_w, total_h,
             win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
