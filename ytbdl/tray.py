@@ -259,23 +259,27 @@ class ControlWindow:
         )
         # 実行中/待機中のステータス
         self._status_hwnd = _create_window(
-            "STATIC", "", win32con.WS_CHILD, 0,
+            "STATIC", "",
+            win32con.WS_CHILD | win32con.WS_VISIBLE, 0,
             8, 4, w - 16, 22, self.hwnd, 0,
         )
         # 待機中キューの一覧
         self._queue_hwnd = _create_window(
-            "STATIC", "", win32con.WS_CHILD, 0,
+            "STATIC", "",
+            win32con.WS_CHILD | win32con.WS_VISIBLE, 0,
             8, 28, w - 16, 68, self.hwnd, 0,
         )
         # 入力フォームのラベル
         self._hint_hwnd = _create_window(
-            "STATIC", _HINT_TEXT, win32con.WS_CHILD, 0,
+            "STATIC", _HINT_TEXT,
+            win32con.WS_CHILD | win32con.WS_VISIBLE, 0,
             8, 98, w - 16, 20, self.hwnd, 0,
         )
         # 入力フォーム(URL + 引数)
         self._input_hwnd = _create_window(
             _INPUT_EDIT_CLASS, "",
-            win32con.WS_CHILD | win32con.ES_AUTOHSCROLL, 0,
+            win32con.WS_CHILD | win32con.WS_VISIBLE
+            | win32con.ES_AUTOHSCROLL, 0,
             8, 124, w - 16, 24, self.hwnd, 0,
         )
         # ボタン
@@ -289,7 +293,8 @@ class ControlWindow:
     def _create_button(self, text: str, x: int, y: int, w: int, control_id: int):
         _create_window(
             "BUTTON", text,
-            win32con.WS_CHILD | win32con.BS_PUSHBUTTON, 0,
+            win32con.WS_CHILD | win32con.WS_VISIBLE
+            | win32con.BS_PUSHBUTTON, 0,
             x, y, w, 24, self.hwnd, control_id,
         )
 
