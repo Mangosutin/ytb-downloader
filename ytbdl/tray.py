@@ -136,11 +136,11 @@ def _control_rect() -> tuple[int, int, int, int]:
     )
 
 
-def _toast_rect() -> tuple[int, int, int, int]:
+def _toast_rect(control_height: int = _CONTROL_HEIGHT) -> tuple[int, int, int, int]:
     cx = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
     cy = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
     # 制御ウィンドウの上端の上に固定配置する
-    y = cy - _CONTROL_HEIGHT - 8 - _TOAST_HEIGHT - 8
+    y = cy - control_height - 8 - _TOAST_HEIGHT - 8
     return (cx - _TOAST_WIDTH - 8, y, _TOAST_WIDTH, _TOAST_HEIGHT)
 
 
@@ -165,7 +165,12 @@ class ToastWindow:
         self.hwnd: int | None = None
         self._proc_ref = self._toast_proc
         _register_window_class(self.CLASS, self._proc_ref)
-        x, y, w, h = _toast_rect()
+        control = self.app._control
+        control_height = _CONTROL_HEIGHT
+        if control.hwnd is not None:
+            rect = win32gui.GetWindowRect(control.hwnd)
+            control_height = rect[3] - rect[1]
+        x, y, w, h = _toast_rect(control_height)
         self.hwnd = _create_window(
             self.CLASS,
             _TIP_IDLE,
@@ -223,6 +228,10 @@ class ControlWindow:
         self._queue_hwnd = 0
         self._hint_hwnd = 0
         self._input_hwnd = 0
+        self._stack_hwnd = 0
+        self._run_now_hwnd = 0
+        self._clear_hwnd = 0
+        self._quit_hwnd = 0
 
     def show(self) -> None:
         if self.hwnd is None:
@@ -283,15 +292,15 @@ class ControlWindow:
             8, 124, w - 16, 24, self.hwnd, 0,
         )
         # ボタン
-        self._create_button("Stack/追加", 8, 152, 84, _ID_STACK)
-        self._create_button("Run now/即実行", 96, 152, 102, _ID_RUN_NOW)
-        self._create_button("Clear/消去", 202, 152, 60, _ID_CLEAR)
-        self._create_button("Quit/終了", 268, 152, 52, _ID_QUIT)
+        self._stack_hwnd = self._create_button("Stack/追加", 8, 152, 84, _ID_STACK)
+        self._run_now_hwnd = self._create_button("Run now/即実行", 96, 152, 102, _ID_RUN_NOW)
+        self._clear_hwnd = self._create_button("Clear/消去", 202, 152, 60, _ID_CLEAR)
+        self._quit_hwnd = self._create_button("Quit/終了", 268, 152, 52, _ID_QUIT)
         win32gui.UpdateWindow(self.hwnd)
         self._refresh()
 
     def _create_button(self, text: str, x: int, y: int, w: int, control_id: int):
-        _create_window(
+        return _create_window(
             "BUTTON", text,
             win32con.WS_CHILD | win32con.WS_VISIBLE
             | win32con.BS_PUSHBUTTON, 0,
@@ -303,6 +312,96 @@ class ControlWindow:
 
     def _stack(self, priority: int = 0) -> None:
         self.app.enqueue_stack(self._read_input(), priority=priority)
+
+    def _measure_text_height(self, text: str, width: int) -> int:
+        if not text:
+            text = " "
+        hwnd = self._queue_hwnd
+        hdc = win32gui.GetDC(hwnd)
+        try:
+            font = win32gui.SendMessage(hwnd, win32con.WM_GETFONT, 0, 0)
+            old_font = None
+            if font:
+                old_font = win32gui.SelectObject(hdc, font)
+            try:
+                result = win32gui.DrawText(
+                    hdc, text, -1, (0, 0, width, 0),
+                    win32con.DT_CALCRECT | win32con.DT_WORDBREAK,
+                )
+                if isinstance(result, (list, tuple)):
+                    if isinstance(result[-1], (list, tuple)):
+                        height = result[-1][3] - result[-1][1]
+                    else:
+                        height = result[0]
+                else:
+                    height = result
+                return max(14, height or 14)
+            finally:
+                if old_font is not None:
+                    win32gui.SelectObject(hdc, old_font)
+        finally:
+            win32gui.ReleaseDC(hwnd, hdc)
+
+    def _layout(self) -> None:
+        if self.hwnd is None:
+            return
+        queue_text = win32gui.GetWindowText(self._queue_hwnd) or "(キューなし)"
+        queue_h = self._measure_text_height(queue_text, _CONTROL_WIDTH - 16)
+        status_h = 22
+        hint_h = 20
+        input_h = 24
+        buttons_h = 24
+        margin = 4
+        gap = 4
+        status_y = margin
+        queue_y = status_y + status_h + gap
+        hint_y = queue_y + queue_h + gap
+        input_y = hint_y + hint_h + gap
+        buttons_y = input_y + input_h + gap
+        window_h = buttons_y + buttons_h + margin
+        w = _CONTROL_WIDTH
+        cx = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
+        cy = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+        # クライアント領域(window_h)からウィンドウ全体のサイズを算出
+        # (キャプション/枠を含める; pywin32 に AdjustWindowRect がないため
+        #  ctypes 経由で呼び出す)
+        style = win32con.WS_OVERLAPPED | win32con.WS_CAPTION | win32con.WS_SYSMENU
+        rect = (ctypes.c_long * 4)(0, 0, w, window_h)
+        ctypes.windll.user32.AdjustWindowRect(ctypes.byref(rect), style, False)
+        total_w = rect[2] - rect[0]
+        total_h = rect[3] - rect[1]
+        x = cx - total_w - 8
+        y = cy - total_h - 8
+        win32gui.SetWindowPos(
+            self._status_hwnd, 0, 8, status_y, w - 16, status_h,
+            win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
+        )
+        win32gui.SetWindowPos(
+            self._queue_hwnd, 0, 8, queue_y, w - 16, queue_h,
+            win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
+        )
+        win32gui.SetWindowPos(
+            self._hint_hwnd, 0, 8, hint_y, w - 16, hint_h,
+            win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
+        )
+        win32gui.SetWindowPos(
+            self._input_hwnd, 0, 8, input_y, w - 16, input_h,
+            win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
+        )
+        for hwnd, bx, bw in (
+            (self._stack_hwnd, 8, 84),
+            (self._run_now_hwnd, 96, 102),
+            (self._clear_hwnd, 202, 60),
+            (self._quit_hwnd, 268, 52),
+        ):
+            win32gui.SetWindowPos(
+                hwnd, 0, bx, buttons_y, bw, buttons_h,
+                win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
+            )
+        win32gui.SetWindowPos(
+            self.hwnd, 0, x, y, total_w, total_h,
+            win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
+        )
 
     def _refresh(self) -> None:
         if self.hwnd is None:
@@ -323,6 +422,7 @@ class ControlWindow:
         win32gui.SetWindowText(
             self._queue_hwnd, "\n".join(lines) or "(キューなし)"
         )
+        self._layout()
 
     def _proc(self, hwnd, msg, wparam, lparam):
         if msg == win32con.WM_COMMAND:
