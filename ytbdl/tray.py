@@ -228,8 +228,18 @@ class ControlWindow:
         if self.hwnd is None:
             self._create()
         else:
-            win32gui.SetForegroundWindow(self.hwnd)
+            # A background tray app cannot be made foreground (Windows
+            # rejects it); don't let that abort the show.
+            try:
+                win32gui.SetForegroundWindow(self.hwnd)
+            except win32api.error:
+                logger.debug(
+                    "SetForegroundWindow failed in ControlWindow.show(); "
+                    "showing the window without activation",
+                    exc_info=True,
+                )
         win32gui.ShowWindow(self.hwnd, win32con.SW_SHOWNORMAL)
+        win32gui.BringWindowToTop(self.hwnd)
         self._refresh()
 
     def _create(self) -> None:
