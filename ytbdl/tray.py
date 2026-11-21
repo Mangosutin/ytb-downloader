@@ -125,23 +125,37 @@ def _set_timer(hwnd: int, timer_id: int, interval_ms: int) -> None:
     ctypes.windll.user32.SetTimer(hwnd, timer_id, interval_ms, None)
 
 
+def _work_area() -> tuple[int, int, int, int]:
+    """タスクバーを除いた作業領域 (left, top, right, bottom) を返す。"""
+
+    class _RECT(ctypes.Structure):
+        _fields_ = [
+            ("left", ctypes.c_long),
+            ("top", ctypes.c_long),
+            ("right", ctypes.c_long),
+            ("bottom", ctypes.c_long),
+        ]
+
+    work = _RECT()
+    ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work), 0)
+    return (work.left, work.top, work.right, work.bottom)
+
+
 def _control_rect() -> tuple[int, int, int, int]:
-    cx = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
-    cy = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+    work_left, work_top, work_right, work_bottom = _work_area()
     return (
-        cx - _CONTROL_WIDTH - 8,
-        cy - _CONTROL_HEIGHT - 8,
+        work_right - _CONTROL_WIDTH - 8,
+        work_bottom - _CONTROL_HEIGHT - 8,
         _CONTROL_WIDTH,
         _CONTROL_HEIGHT,
     )
 
 
 def _toast_rect(control_height: int = _CONTROL_HEIGHT) -> tuple[int, int, int, int]:
-    cx = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
-    cy = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+    work_left, work_top, work_right, work_bottom = _work_area()
     # 制御ウィンドウの上端の上に固定配置する
-    y = cy - control_height - 8 - _TOAST_HEIGHT - 8
-    return (cx - _TOAST_WIDTH - 8, y, _TOAST_WIDTH, _TOAST_HEIGHT)
+    y = work_bottom - control_height - 8 - _TOAST_HEIGHT - 8
+    return (work_right - _TOAST_WIDTH - 8, y, _TOAST_WIDTH, _TOAST_HEIGHT)
 
 
 # ----------------------------------------------------------------------
@@ -360,8 +374,7 @@ class ControlWindow:
         buttons_y = input_y + input_h + gap
         window_h = buttons_y + buttons_h + margin
         w = _CONTROL_WIDTH
-        cx = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
-        cy = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
+        work_left, work_top, work_right, work_bottom = _work_area()
         # クライアント領域(window_h)からウィンドウ全体のサイズを算出
         # (キャプション/枠を含める; pywin32 に AdjustWindowRect がないため
         #  ctypes 経由で呼び出す)
@@ -370,8 +383,8 @@ class ControlWindow:
         ctypes.windll.user32.AdjustWindowRect(ctypes.byref(rect), style, False)
         total_w = rect[2] - rect[0]
         total_h = rect[3] - rect[1]
-        x = cx - total_w - 8
-        y = cy - total_h - 8
+        x = work_right - total_w - 8
+        y = work_bottom - total_h - 8
         win32gui.SetWindowPos(
             self._status_hwnd, 0, 8, status_y, w - 16, status_h,
             win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
