@@ -207,6 +207,8 @@ watch?v=...&list=...&index=N のように index を指定した場合は、そ�
   - 入力フォーム(`<YouTube URL> [--mode audio|video]` 形式)とボタン: `Stack/追加`、`Run now/即実行`、`Clear/消去`、`Quit/終了`
   - 入力形式: 左端にYouTube URL(引用符なし)、空白区切りで `--mode audio|video` を追記できます。Enterキーでも Stack に反映されます。
 
+※ トレイアプリを使うには `pip install -r requirements.txt` で pywin32 が必要です（`pywin32>=305`）。
+
 ## 7. 命名規則
 
 ### 動画

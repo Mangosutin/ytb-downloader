@@ -96,7 +96,7 @@
 
 ### トレイアプリ（Issue #5）
 
-- 依存追加: pywin32
+- 依存追加: pywin32（requirements.txt に追加済み。未インストール時はトレイ起動が明確なエラーメッセージで失敗し、`pip install -r requirements.txt` でインストールできます）
 - `py run.py`（引数なし・Windows）または `py run.py --tray` でタスクトレイアプリを起動する。URL指定時はこれまでどおり CLI 実行する。
 - 左クリック: クリップボードの YouTube URL を読み取り、実行キューに追加する。Toast(通知)で「スタックしました: <desc>」を表示する。
 - 左クリック時の実行内容は Toast とトレイのツールチップで確認できる: モード(audio/video)、単体/プレイリスト、タイトル(playlistName/videoTitle)。

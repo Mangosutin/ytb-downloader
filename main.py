@@ -116,7 +116,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.url and not args.linklist:
-        if not args.tray and sys.platform != "win32":
+        if sys.platform != "win32":
             parser.error("URLまたは --linklist を指定してください。")
         # トレイアプリの起動パス（Windows のみ）。
         app_dir = Path(__file__).resolve().parent
@@ -130,8 +130,14 @@ def main() -> int:
                 "YTB downloader v%s started. tray",
                 APP_VERSION,
             )
-            from ytbdl.tray import run_tray
+            from ytbdl.tray import run_tray, win32gui
 
+            if win32gui is None:
+                logging.getLogger(__name__).error(
+                    "pywin32 がインストールされていないためトレイアプリを起動できません。"
+                    "`pip install -r requirements.txt` を実行してください。"
+                )
+                return 1
             return run_tray(config, config.default_mode)
         except Exception:
             logging.getLogger(__name__).exception(

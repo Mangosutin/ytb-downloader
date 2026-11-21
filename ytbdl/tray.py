@@ -238,27 +238,26 @@ class ControlWindow:
             x, y, w, h,
             None, 0,
         )
-        hinst = win32api.GetModuleHandle(None)
         # 実行中/待機中のステータス
         self._status_hwnd = _create_window(
             "STATIC", "", win32con.WS_CHILD, 0,
-            4, w - 16, 22, self.hwnd, 0, hinst, None,
+            8, 4, w - 16, 22, self.hwnd, 0,
         )
         # 待機中キューの一覧
         self._queue_hwnd = _create_window(
             "STATIC", "", win32con.WS_CHILD, 0,
-            28, w - 16, 68, self.hwnd, 0, hinst, None,
+            8, 28, w - 16, 68, self.hwnd, 0,
         )
         # 入力フォームのラベル
         self._hint_hwnd = _create_window(
             "STATIC", _HINT_TEXT, win32con.WS_CHILD, 0,
-            98, w - 16, 20, self.hwnd, 0, hinst, None,
+            8, 98, w - 16, 20, self.hwnd, 0,
         )
         # 入力フォーム(URL + 引数)
         self._input_hwnd = _create_window(
             _INPUT_EDIT_CLASS, "",
             win32con.WS_CHILD | win32con.ES_AUTOHSCROLL, 0,
-            124, w - 16, 24, self.hwnd, 0, hinst, None,
+            8, 124, w - 16, 24, self.hwnd, 0,
         )
         # ボタン
         self._create_button("Stack/追加", 8, 152, 84, _ID_STACK)
@@ -269,11 +268,10 @@ class ControlWindow:
         self._refresh()
 
     def _create_button(self, text: str, x: int, y: int, w: int, control_id: int):
-        hinst = win32api.GetModuleHandle(None)
         _create_window(
             "BUTTON", text,
             win32con.WS_CHILD | win32con.BS_PUSHBUTTON, 0,
-            x, y, w, 24, self.hwnd, control_id, hinst, None,
+            x, y, w, 24, self.hwnd, control_id,
         )
 
     def _read_input(self) -> str:
@@ -338,11 +336,15 @@ class TrayApp:
         self,
         config: Config,
         default_mode: str,
-        queue=None,
+        download_queue=None,
     ):
         self.config = config
         self.default_mode = default_mode
-        self._queue = queue if queue is not None else DownloadQueue(config)
+        self._queue = (
+            download_queue
+            if download_queue is not None
+            else DownloadQueue(config)
+        )
         # UIスレッドにキュー状態を通知するstdlib queue
         self._ui_queue: queue.Queue = queue.Queue()
         self._toasts: list[ToastWindow] = []
@@ -503,7 +505,10 @@ class TrayApp:
 def run_tray(config: Config, default_mode: str) -> int:
     """トレイアプリを起動して終了コードを返す。"""
     if win32gui is None:
-        raise RuntimeError("このプラットフォームではトレイアプリを利用できません。")
+        raise RuntimeError(
+            "pywin32 がインストールされていないためトレイアプリを起動できません。"
+            "`pip install -r requirements.txt` を実行してください。"
+        )
     app = TrayApp(config, default_mode)
     try:
         app.start()
