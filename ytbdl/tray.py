@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import queue
 
@@ -116,6 +117,14 @@ def _create_window(class_name, title, style, ex_style, x, y, w, h, parent, id_):
     )
 
 
+def _set_timer(hwnd: int, timer_id: int, interval_ms: int) -> None:
+    """Win32 の SetTimer（pywin32 未提供のため ctypes 経由）。
+
+    lpTimerFunc=NULL のため、WM_TIMER メッセージが hwnd に投稿される。
+    """
+    ctypes.windll.user32.SetTimer(hwnd, timer_id, interval_ms, None)
+
+
 def _control_rect() -> tuple[int, int, int, int]:
     cx = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
     cy = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
@@ -166,7 +175,7 @@ class ToastWindow:
             None, 0,
         )
         win32gui.SetWindowText(self.hwnd, text)
-        win32gui.SetTimer(self.hwnd, 1, self.dismiss_after_ms, None)
+        _set_timer(self.hwnd, 1, self.dismiss_after_ms)
         win32gui.ShowWindow(self.hwnd, win32con.SW_SHOWNOACTIVATE)
 
     def is_alive(self) -> bool:
@@ -384,9 +393,7 @@ class TrayApp:
         self._queue.status_callback = self._on_queue_status
         self._create_tray()
         self._control._create()
-        win32gui.SetTimer(
-            self._tray_hwnd, _REFRESH_TIMER_ID, _REFRESH_INTERVAL_MS, None
-        )
+        _set_timer(self._tray_hwnd, _REFRESH_TIMER_ID, _REFRESH_INTERVAL_MS)
         self._tray_modify_tip(_TIP_IDLE)
         self._queue.start()
 
