@@ -91,3 +91,23 @@
 ### JSON リンクリスト
 
 - --linklist PATH：URL 文字列配列または {"url": "...", "mode": "audio" | "video"} 配列を読み込む。mode 省略時は CLI 指定、設定ファイル既定値の順で解決する。全件処理後に成功・スキップ・失敗件数を集計し、失敗があれば終了コード1。
+
+## v0.1.8 追加仕様
+
+### トレイアプリ（Issue #5）
+
+- 依存追加: pywin32
+- `py run.py`（引数なし・Windows）または `py run.py --tray` でタスクトレイアプリを起動する。URL指定時はこれまでどおり CLI 実行する。
+- 左クリック: クリップボードの YouTube URL を読み取り、実行キューに追加する。Toast(通知)で「スタックしました: <desc>」を表示する。
+- 左クリック時の実行内容は Toast とトレイのツールチップで確認できる: モード(audio/video)、単体/プレイリスト、タイトル(playlistName/videoTitle)。
+- 右クリック: 固定位置の小さなウィンドウを表示する:
+  - 実行中項目の詳細(`audio | 単体 | タイトル [abc123]` 等)
+  - 待機中キュー(最大8件、`... 他N件` を表示)
+  - 入力フォーム(YouTube URL + 引数)とラベル
+  - ボタン: Stack/追加、Run now/即実行、Clear/消去、Quit/終了
+  - 入力形式: `<YouTube URL> [--mode audio|video]` — 左端はURL(引用符なし)、空白区切りで `--mode audio|video` または `--mode=audio` を追記可能（無効な値は無視）。Enterキーでも Stack に反映される。
+- 実行キュー(DownloadQueue):
+  - FIFO 順に1件ずつ順次実行(最大1件並列)。
+  - Run now はキュー先頭に積む(優先度)。
+  - ダウンロード前に archive 済みの動画IDはスキップする。
+  - 項目実行中の例外は `DownloadRequest.error` に保存しキューは継続する。

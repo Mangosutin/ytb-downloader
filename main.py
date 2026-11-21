@@ -50,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="version",
         version=f"YTB downloader {APP_VERSION}",
     )
+    parser.add_argument(
+        "--tray",
+        action="store_true",
+        help="タスクトレイアプリを起動する",
+    )
     return parser
 
 
@@ -111,7 +116,28 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.url and not args.linklist:
-        parser.error("URLまたは --linklist を指定してください。")
+        if not args.tray and sys.platform != "win32":
+            parser.error("URLまたは --linklist を指定してください。")
+        # トレイアプリの起動パス（Windows のみ）。
+        app_dir = Path(__file__).resolve().parent
+        try:
+            config = load_config(
+                args.config or app_dir / "config.toml",
+                app_dir=app_dir,
+            )
+            setup_logging(config.log_dir)
+            logging.getLogger(__name__).info(
+                "YTB downloader v%s started. tray",
+                APP_VERSION,
+            )
+            from ytbdl.tray import run_tray
+
+            return run_tray(config, config.default_mode)
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "トレイアプリの起動に失敗しました。"
+            )
+            return 1
     if args.url and args.linklist:
         parser.error("URLと --linklist は同時に指定できません。")
 

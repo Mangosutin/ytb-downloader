@@ -5,7 +5,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import ParseResult, parse_qsl, urlencode, urlparse, urlunparse
 
 import yt_dlp
@@ -487,6 +487,7 @@ def download(
     url: str,
     mode: str,
     config: Config,
+    info_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> None:
     if mode not in ("video", "audio"):
         raise ValueError(f"不正なモードです:{mode}")
@@ -591,6 +592,14 @@ def download(
                         selected_info = dict(info)
                         selected_info["entries"] = [selected]
                         info = selected_info
+            if info_callback is not None:
+                try:
+                    info_callback(info)
+                except Exception:
+                    logger.debug(
+                        "info_callback の呼び出しに失敗しました",
+                        exc_info=True,
+                    )
             output_template = _build_output_template(
                 info,
                 mode,

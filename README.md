@@ -1,6 +1,6 @@
 # YTB downloader
 
-Version: 0.1.7
+Version: 0.1.8
 
 Windows / Python 3.13 向けの個人用 YouTube ダウンローダーです。
 yt-dlpをPythonライブラリとして利用し、動画・音声を指定した命名規則で保存します。
@@ -195,6 +195,17 @@ watch?v=...&list=...&index=N のように index を指定した場合は、そ�
 
 プレイリスト名のフォルダを作成し、その中に動画を保存します。
 単発動画はdownloads直下に保存します。
+
+### トレイアプリ（v0.1.8）
+
+`py run.py`（引数なし・Windows）または `py run.py --tray` でタスクトレイアプリを起動します。URLを指定した場合はこれまでどおりCLI実行します。
+
+- 左クリック: クリップボードの YouTube URL を読み取り、実行キューに追加します。Toastで「スタックしました: <desc>」を表示し、モード・単体／プレイリスト・タイトルはトレイのツールチップで確認できます。
+- 右クリック: 固定位置の小さなウィンドウを表示します:
+  - 実行中項目の詳細(`audio | 単体 | タイトル [abc123]` 等)
+  - 待機中キュー(最大8件)
+  - 入力フォーム(`<YouTube URL> [--mode audio|video]` 形式)とボタン: `Stack/追加`、`Run now/即実行`、`Clear/消去`、`Quit/終了`
+  - 入力形式: 左端にYouTube URL(引用符なし)、空白区切りで `--mode audio|video` を追記できます。Enterキーでも Stack に反映されます。
 
 ## 7. 命名規則
 
